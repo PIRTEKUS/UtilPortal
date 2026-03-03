@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+{% block title %}Manage Modules{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12 d-flex justify-content-between align-items-center">
+        <div>
+            <h3 class="fw-bold"><i class="bi bi-hdd-network-fill me-2 text-info"></i>Module Management</h3>
+            <p class="text-muted mb-0">Create and configure self-serve tasks for users.</p>
+        </div>
+        <div>
+            <a href="{{ url_for('admin.dashboard') }}" class="btn btn-outline-secondary me-2">Back</a>
+            <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createModuleModal">
+                <i class="bi bi-plus-circle"></i> New Module
+            </button>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <div class="card bg-dark border-secondary shadow">
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-dark table-hover mb-0">
+                        <thead class="table-secondary border-secondary">
+                            <tr>
+                                <th>ID</th>
+                                <th>Name</th>
+                                <th>Description</th>
+                                <th>Type</th>
+                                <th>Assigned Users</th>
+                                <th class="text-end">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for module in modules %}
+                            <tr>
+                                <td>{{ module.id }}</td>
+                                <td class="fw-bold text-primary">{{ module.name }}</td>
+                                <td>{{ module.description[:50] + '...' if module.description and
+                                    module.description|length > 50 else module.description }}</td>
+                                <td>
+                                    {% if module.custom_script_path %}
+                                    <span class="badge bg-warning text-dark"><i class="bi bi-filetype-py me-1"></i>
+                                        Custom Script</span>
+                                    {% else %}
+                                    <span class="badge bg-info text-dark"><i class="bi bi-database me-1"></i> Generic
+                                        SP</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ module.users|length }}</td>
+                                <td class="text-end">
+                                    <button class="btn btn-sm btn-outline-info me-1"><i
+                                            class="bi bi-pencil"></i></button>
+                                    <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="6" class="text-center py-4 text-muted">
+                                    No modules configured yet.
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Create Module Modal -->
+<div class="modal fade" id="createModuleModal" tabindex="-1" aria-hidden="true" data-bs-theme="dark">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content bg-dark">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title">Create New Module</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form action="{{ url_for('admin.create_module') }}" method="post">
+                <div class="modal-body text-light">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Module Name *</label>
+                            <input type="text" name="name" class="form-control" required
+                                placeholder="e.g. Reset VPN Connection">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Type *</label>
+                            <select name="type" class="form-select" id="moduleTypeSelect"
+                                onchange="toggleTypeSpecifics()">
+                                <option value="generic">Generic Stored Procedure</option>
+                                <option value="custom">Custom Python Script</option>
+                            </select>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Description</label>
+                            <textarea name="description" class="form-control" rows="2"
+                                placeholder="Brief explanation of what this does..."></textarea>
+                        </div>
+
+                        <!-- Generic SP fields -->
+                        <div class="col-12 generic-fields">
+                            <hr class="border-secondary">
+                            <h6 class="text-info">Database Configuration</h6>
+                        </div>
+                        <div class="col-md-6 generic-fields">
+                            <label class="form-label">Target Connection Database</label>
+                            <input type="text" name="target_connection" class="form-control"
+                                placeholder="mysql+pymysql://user:pass@host/db">
+                            <div class="form-text text-muted">Leave blank to use default portal DB</div>
+                        </div>
+                        <div class="col-md-6 generic-fields">
+                            <label class="form-label">Stored Procedure Name</label>
+                            <input type="text" name="stored_proc_name" class="form-control"
+                                placeholder="sp_reset_user_vpn">
+                        </div>
+                        <div class="col-12 generic-fields">
+                            <label class="form-label">Parameters JSON (Optional)</label>
+                            <textarea name="parameters_json" class="form-control font-monospace" rows="4"
+                                placeholder='[{"name":"username", "label":"Username", "type":"text", "required":true}]'></textarea>
+                            <div class="form-text text-muted">Define the fields the user needs to fill out before
+                                executing.</div>
+                        </div>
+
+                        <!-- Custom script fields -->
+                        <div class="col-12 custom-fields" style="display:none;">
+                            <hr class="border-secondary">
+                            <h6 class="text-warning">Custom Script Configuration</h6>
+                        </div>
+                        <div class="col-12 custom-fields" style="display:none;">
+                            <label class="form-label">Python Script Path *</label>
+                            <input type="text" name="custom_script_path" class="form-control"
+                                placeholder="modules/my_custom_script.py">
+                            <div class="form-text text-warning">This script will handle all rendering, data fetching,
+                                and execution logic.</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer border-secondary">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Module</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function toggleTypeSpecifics() {
+        const type = document.getElementById('moduleTypeSelect').value;
+        const genFields = document.querySelectorAll('.generic-fields');
+        const custFields = document.querySelectorAll('.custom-fields');
+
+        if (type === 'generic') {
+            genFields.forEach(el => el.style.display = 'block');
+            custFields.forEach(el => el.style.display = 'none');
+        } else {
+            genFields.forEach(el => el.style.display = 'none');
+            custFields.forEach(el => el.style.display = 'block');
+        }
+    }
+</script>
+{% endblock %}
