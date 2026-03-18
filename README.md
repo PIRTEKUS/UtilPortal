@@ -8,11 +8,24 @@ These instructions will guide you through setting up a complete production-ready
 
 ### 1. Update and Install System Prerequisites
 
-Open terminal and run:
+Open terminal and install the basic system packages:
 ```bash
 sudo apt update
 sudo apt upgrade -y
-sudo apt install python3 python3-pip python3-venv nginx mysql-server libmysqlclient-dev pkg-config git -y
+sudo apt install python3 python3-pip python3-venv nginx mysql-server libmysqlclient-dev pkg-config git curl -y
+```
+
+Next, you need to install the **Microsoft ODBC Driver 17** and **unixODBC** development headers so the application can communicate with SQL Server databases:
+
+```bash
+# Add the Microsoft repository key and list
+curl https://packages.microsoft.com/keys/microsoft.asc | sudo tee /etc/apt/trusted.gpg.d/microsoft.asc
+curl https://packages.microsoft.com/config/ubuntu/22.04/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.list
+
+# Update apt and install the ODBC driver and unixODBC
+sudo apt-get update
+sudo ACCEPT_EULA=Y apt-get install -y msodbcsql17
+sudo apt-get install -y unixodbc-dev
 ```
 
 ### 2. Configure MySQL Database
