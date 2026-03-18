@@ -58,12 +58,14 @@ It's best practice to run web applications out of `/var/www` or `/opt`. We will 
 ```bash
 # Create the directory
 sudo mkdir -p /opt/utilportal
-# Make your ubuntu user the owner
-sudo chown -R $USER:$USER /opt/utilportal
 
 # Clone the repository
 git clone https://github.com/PIRTEKUS/UtilPortal.git /opt/utilportal
 cd /opt/utilportal
+
+# Set ownership and permissions so Nginx/Gunicorn can operate
+sudo chown -R $USER:www-data /opt/utilportal
+sudo chmod -R 775 /opt/utilportal
 
 # Create a virtual environment
 python3 -m venv venv
@@ -160,3 +162,28 @@ sudo systemctl restart nginx
 
 ### 8. Final Checks
 Open your web browser and navigate to your server's IP address or domain. The UtilPortal login screen should load successfully!
+
+---
+
+## Updating the Application
+
+When new features or fixes are pushed to the GitHub repository, you can easily pull the latest code and apply it to your running server:
+
+```bash
+# Navigate to the project folder
+cd /opt/utilportal
+
+# Pull the latest changes
+sudo git pull
+
+# Activate your virtual environment and install any new dependencies
+source venv/bin/activate
+pip install -r requirements.txt
+
+# Run the database init script again (safe to run on existing DBs)
+# to apply any new database schema changes
+python init_db.py
+
+# Restart the Gunicorn service so it serves the new code
+sudo systemctl restart utilportal
+```
