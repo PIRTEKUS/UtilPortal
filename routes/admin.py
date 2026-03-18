@@ -69,6 +69,8 @@ def get_databases(conn_id):
     conn = ServerConnection.query.get_or_404(conn_id)
     if conn.server_type != 'sqlserver':
         return jsonify({'error': 'Only SQL Server supports dynamic DB fetching right now'}), 400
+        
+    try:
         # Use ODBC Driver 17 for SQL Server because older servers fail OpenSSL 3.0 handshakes on Driver 18
         conn_str = f"DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={conn.host};UID={conn.username};PWD={conn.password};"
         odbc_conn = pyodbc.connect(conn_str, autocommit=True)
