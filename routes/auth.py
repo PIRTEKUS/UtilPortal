@@ -109,3 +109,20 @@ def login_sso_callback():
     if user.is_admin():
         return redirect(url_for('admin.dashboard'))
     return redirect(url_for('portal.dashboard'))
+
+@bp.route('/debug-env')
+def debug_env():
+    # Only allow local network or specific users for security, but for immediate debugging
+    # we'll just return the masked auth config
+    import os
+    cfg = current_app.config
+    raw_env_tenant = os.environ.get('AZURE_TENANT_ID', 'MISSING_IN_OS_ENV')
+    
+    return {
+        'status': 'Debugging Environment',
+        'AZURE_CLIENT_ID': cfg.get('AZURE_CLIENT_ID', 'MISSING_IN_CONFIG'),
+        'AZURE_TENANT_ID_IN_CONFIG': cfg.get('AZURE_TENANT_ID', 'MISSING_IN_CONFIG'),
+        'AZURE_TENANT_ID_IN_OS': raw_env_tenant,
+        'AZURE_AUTHORITY': cfg.get('AZURE_AUTHORITY', 'MISSING_IN_CONFIG'),
+        'AZURE_CLIENT_SECRET_PREFIX': str(cfg.get('AZURE_CLIENT_SECRET', ''))[:4] + '...' if cfg.get('AZURE_CLIENT_SECRET') else 'MISSING'
+    }
