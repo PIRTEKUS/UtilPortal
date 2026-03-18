@@ -15,3 +15,9 @@ class Config:
     AZURE_CLIENT_ID = os.environ.get('AZURE_CLIENT_ID')
     AZURE_TENANT_ID = os.environ.get('AZURE_TENANT_ID')
     AZURE_CLIENT_SECRET = os.environ.get('AZURE_CLIENT_SECRET')
+
+    # Authority URL for MSAL
+    if AZURE_TENANT_ID:
+        AZURE_AUTHORITY = f"https://login.microsoftonline.com/{AZURE_TENANT_ID}"
+    else:
+        AZURE_AUTHORITY = "https://login.microsoftonline.com/common"
