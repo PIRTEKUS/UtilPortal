@@ -54,7 +54,7 @@ def execute(module_id):
             
             if connection_model and connection_model.server_type == 'sqlserver':
                 # Use ODBC Driver 17 for SQL Server due to OpenSSL 3.0 strictness on older servers
-                conn_str = f"DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={connection_model.host};UID={connection_model.username};PWD={connection_model.password};"
+                conn_str = f"DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={connection_model.host};UID={connection_model.username};PWD={connection_model.password};Encrypt=no;TrustServerCertificate=yes;"
                 if module.database_name:
                     conn_str += f";DATABASE={module.database_name}"
                     

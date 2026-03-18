@@ -72,7 +72,7 @@ def get_databases(conn_id):
         
     try:
         # Use ODBC Driver 17 for SQL Server because older servers fail OpenSSL 3.0 handshakes on Driver 18
-        conn_str = f"DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={conn.host};UID={conn.username};PWD={conn.password};"
+        conn_str = f"DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={conn.host};UID={conn.username};PWD={conn.password};Encrypt=no;TrustServerCertificate=yes;"
         odbc_conn = pyodbc.connect(conn_str, autocommit=True)
         cursor = odbc_conn.cursor()
         cursor.execute("SELECT name FROM sys.databases WHERE state_desc = 'ONLINE'")
