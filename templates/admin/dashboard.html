@@ -14,27 +14,46 @@
     </div>
 </div>
 
-<div class="row g-4 mb-4">
-    <div class="col-md-6">
-        <div class="card border-primary shadow text-center h-100">
-            <div class="card-body py-5">
-                <i class="bi bi-people-fill display-3 text-primary mb-3"></i>
-                <h3 class="fw-bold">{{ users_count }}</h3>
-                <h5 class="card-title text-muted">Total Users</h5>
-                <a href="{{ url_for('admin.users') }}" class="btn btn-primary mt-3">Manage Users</a>
-            </div>
+<div class="col-md-4">
+    <div class="card border-primary shadow text-center h-100">
+        <div class="card-body py-5">
+            <i class="bi bi-people-fill display-3 text-primary mb-3"></i>
+            <h3 class="fw-bold">{{ users_count }}</h3>
+            <h5 class="card-title text-muted">Total Users</h5>
+            <a href="{{ url_for('admin.users') }}" class="btn btn-primary mt-3">Manage Users</a>
         </div>
     </div>
+</div>
 
-    <div class="col-md-6">
-        <div class="card border-info shadow text-center h-100">
-            <div class="card-body py-5">
-                <i class="bi bi-boxes display-3 text-info mb-3"></i>
-                <h3 class="fw-bold">{{ modules_count }}</h3>
-                <h5 class="card-title text-muted">Configured Modules</h5>
-                <a href="{{ url_for('admin.modules') }}" class="btn btn-info mt-3">Manage Modules</a>
-            </div>
+<div class="col-md-4">
+    <div class="card border-info shadow text-center h-100">
+        <div class="card-body py-5">
+            <i class="bi bi-boxes display-3 text-info mb-3"></i>
+            <h3 class="fw-bold">{{ modules_count }}</h3>
+            <h5 class="card-title text-muted">Configured Modules</h5>
+            <a href="{{ url_for('admin.modules') }}" class="btn btn-info mt-3">Manage Modules</a>
         </div>
     </div>
+</div>
+
+<div class="col-md-4">
+    <div class="card border-warning shadow text-center h-100">
+        <div class="card-body py-5">
+            <i class="bi bi-hdd-rack-fill display-3 text-warning mb-3"></i>
+            <h3 class="fw-bold">{{ connections_count }}</h3>
+            <h5 class="card-title text-muted">Server Connections</h5>
+            <a href="{{ url_for('admin.connections') }}" class="btn btn-warning mt-3">Manage Connections</a>
+        </div>
+    </div>
+</div>
+<div class="card border-info shadow text-center h-100">
+    <div class="card-body py-5">
+        <i class="bi bi-boxes display-3 text-info mb-3"></i>
+        <h3 class="fw-bold">{{ modules_count }}</h3>
+        <h5 class="card-title text-muted">Configured Modules</h5>
+        <a href="{{ url_for('admin.modules') }}" class="btn btn-info mt-3">Manage Modules</a>
+    </div>
+</div>
+</div>
 </div>
 {% endblock %}

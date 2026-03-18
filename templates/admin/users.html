@@ -52,6 +52,19 @@
                                     {% endif %}
                                 </td>
                                 <td class="text-end">
+                                    <form action="{{ url_for('admin.toggle_user_admin', user_id=user.id) }}"
+                                        method="post" class="d-inline">
+                                        {% if user.is_admin() %}
+                                        <button type="submit" class="btn btn-sm btn-outline-danger me-1" {% if
+                                            user.id==current_user.id %}disabled{% endif %}>
+                                            <i class="bi bi-person-down me-1"></i> Revoke Admin
+                                        </button>
+                                        {% else %}
+                                        <button type="submit" class="btn btn-sm btn-outline-warning me-1">
+                                            <i class="bi bi-person-up me-1"></i> Make Admin
+                                        </button>
+                                        {% endif %}
+                                    </form>
                                     <button class="btn btn-sm btn-outline-info" data-bs-toggle="modal"
                                         data-bs-target="#editUserModal{{ user.id }}">
                                         <i class="bi bi-shield-lock me-1"></i> Permissions

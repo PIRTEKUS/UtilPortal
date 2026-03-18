@@ -45,8 +45,10 @@
                                     <span class="badge bg-warning text-dark"><i class="bi bi-filetype-py me-1"></i>
                                         Custom Script</span>
                                     {% else %}
-                                    <span class="badge bg-info text-dark"><i class="bi bi-database me-1"></i> Generic
-                                        SP</span>
+                                    <span class="badge bg-info text-dark"><i class="bi bi-database me-1"></i>
+                                        {% if module.object_type == 'job' %}SQL Job
+                                        {% else %}Stored Procedure{% endif %}
+                                    </span>
                                     {% endif %}
                                 </td>
                                 <td>{{ module.users|length }}</td>
@@ -91,7 +93,7 @@
                             <label class="form-label">Type *</label>
                             <select name="type" class="form-select" id="moduleTypeSelect"
                                 onchange="toggleTypeSpecifics()">
-                                <option value="generic">Generic Stored Procedure</option>
+                                <option value="generic">Database Object (SP/Job)</option>
                                 <option value="custom">Custom Python Script</option>
                             </select>
                         </div>
@@ -107,15 +109,34 @@
                             <h6 class="text-info">Database Configuration</h6>
                         </div>
                         <div class="col-md-6 generic-fields">
-                            <label class="form-label">Target Connection Database</label>
-                            <input type="text" name="target_connection" class="form-control"
-                                placeholder="mysql+pymysql://user:pass@host/db">
-                            <div class="form-text text-muted">Leave blank to use default portal DB</div>
+                            <label class="form-label">Server Connection *</label>
+                            <select name="connection_id" class="form-select" id="connectionSelect"
+                                onchange="handleConnectionChange()">
+                                <option value="">-- Select Connection --</option>
+                                {% for conn in connections %}
+                                <option value="{{ conn.id }}" data-type="{{ conn.server_type }}">{{ conn.name }} ({{
+                                    conn.server_type }})</option>
+                                {% endfor %}
+                            </select>
                         </div>
                         <div class="col-md-6 generic-fields">
-                            <label class="form-label">Stored Procedure Name</label>
+                            <label class="form-label">Object Type *</label>
+                            <select name="object_type" class="form-select" id="objectTypeSelect"
+                                onchange="handleObjectTypeChange()">
+                                <option value="sp">Stored Procedure</option>
+                                <option value="job">SQL Server Job</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6 generic-fields" id="databaseContainer">
+                            <label class="form-label">Target Database</label>
+                            <select name="database_name" class="form-select" id="databaseSelect">
+                                <option value="">-- Select DB (Select Connection first) --</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6 generic-fields">
+                            <label class="form-label" id="spLabel">Stored Procedure Name / Job Name</label>
                             <input type="text" name="stored_proc_name" class="form-control"
-                                placeholder="sp_reset_user_vpn">
+                                placeholder="e.g. sp_reset_user_vpn">
                         </div>
                         <div class="col-12 generic-fields">
                             <label class="form-label">Parameters JSON (Optional)</label>
@@ -147,9 +168,6 @@
         </div>
     </div>
 </div>
-{% endblock %}
-
-{% block scripts %}
 <script>
     function toggleTypeSpecifics() {
         const type = document.getElementById('moduleTypeSelect').value;
@@ -159,10 +177,75 @@
         if (type === 'generic') {
             genFields.forEach(el => el.style.display = 'block');
             custFields.forEach(el => el.style.display = 'none');
+            handleObjectTypeChange(); // Re-sync fields when toggled back
         } else {
             genFields.forEach(el => el.style.display = 'none');
             custFields.forEach(el => el.style.display = 'block');
         }
     }
+
+    function handleObjectTypeChange() {
+        const objType = document.getElementById('objectTypeSelect').value;
+        const dbContainer = document.getElementById('databaseContainer');
+        const spLabel = document.getElementById('spLabel');
+
+        if (objType === 'job') {
+            dbContainer.style.display = 'none';
+            spLabel.textContent = 'SQL Agent Job Name *';
+        } else {
+            dbContainer.style.display = 'block';
+            spLabel.textContent = 'Stored Procedure Name *';
+            handleConnectionChange(); // fetch DBs if needed
+        }
+    }
+
+    function handleConnectionChange() {
+        const connSelect = document.getElementById('connectionSelect');
+        const objType = document.getElementById('objectTypeSelect').value;
+        const dbSelect = document.getElementById('databaseSelect');
+
+        if (objType === 'job') return; // Jobs don't need a specific target DB selected usually (they run on MSDB)
+
+        const selectedOption = connSelect.options[connSelect.selectedIndex];
+        if (!selectedOption.value) {
+            dbSelect.innerHTML = '<option value="">-- Select DB (Select Connection first) --</option>';
+            return;
+        }
+
+        const type = selectedOption.getAttribute('data-type');
+
+        if (type === 'sqlserver') {
+            dbSelect.innerHTML = '<option value="">Loading databases...</option>';
+            dbSelect.disabled = true;
+
+            fetch(`/admin/api/connections/${selectedOption.value}/databases`)
+                .then(response => response.json())
+                .then(data => {
+                    dbSelect.innerHTML = '<option value="">-- Select Database --</option>';
+                    if (data.databases) {
+                        data.databases.forEach(db => {
+                            dbSelect.innerHTML += `<option value="${db}">${db}</option>`;
+                        });
+                    } else if (data.error) {
+                        dbSelect.innerHTML = `<option value="">Error: ${data.error}</option>`;
+                    }
+                })
+                .catch(err => {
+                    dbSelect.innerHTML = '<option value="">Failed to fetch DBs.</option>';
+                })
+                .finally(() => {
+                    dbSelect.disabled = false;
+                });
+        } else {
+            // MySQL or other - manual entry or predefined list
+            dbSelect.innerHTML = '<option value="">Manual DB entry not fully supported yet for MySQL</option>';
+            dbSelect.disabled = false;
+        }
+    }
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', () => {
+        toggleTypeSpecifics();
+    });
 </script>
 {% endblock %}

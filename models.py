@@ -33,14 +33,29 @@ class User(UserMixin, db.Model):
     def __repr__(self):
         return f'<User {self.email}>'
 
+class ServerConnection(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), unique=True, nullable=False)
+    server_type = db.Column(db.String(50), nullable=False) # 'mysql', 'sqlserver'
+    host = db.Column(db.String(255), nullable=False)
+    username = db.Column(db.String(100), nullable=False)
+    password = db.Column(db.String(255), nullable=False) # Plain text for simplicity in this iteration
+
+    # Relationship to know which modules use this connection
+    modules = db.relationship('Module', backref='connection', lazy=True)
+
+    def __repr__(self):
+        return f'<ServerConnection {self.name} ({self.server_type})>'
+
 class Module(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
     description = db.Column(db.Text)
-    
-    # For simple modules
-    target_connection = db.Column(db.String(255)) # Connect string or reference name
-    stored_proc_name = db.Column(db.String(100))
+    # For SQL/Stored Procedure modules
+    connection_id = db.Column(db.Integer, db.ForeignKey('server_connection.id'))
+    database_name = db.Column(db.String(100)) # Target database for SPs
+    object_type = db.Column(db.String(20)) # 'sp' or 'job'
+    stored_proc_name = db.Column(db.String(100)) # Reused for job name if object_type=='job'
     parameters_json = db.Column(db.Text) # JSON string defining required parameters
     
     # For complex modules requiring Python logic

@@ -1,7 +1,8 @@
 from flask import Blueprint, render_template, abort, request, flash, redirect, url_for
 from flask_login import login_required, current_user
 import json
-from models import Module, AuditLog, db
+from models import Module, AuditLog, ServerConnection, db
+import pyodbc
 from urllib.parse import urlsplit
 
 bp = Blueprint('portal', __name__)
@@ -49,33 +50,62 @@ def execute(module_id):
             submitted_params[p_name] = request.form.get(p_name)
             
         try:
-            # Determine which database engine to use
-            if module.target_connection:
-                # Use custom connection string if provided
-                engine = create_engine(module.target_connection)
-                connection = engine.connect()
-            else:
-                # Use default portal connection (db.engine)
-                connection = db.engine.connect()
-                
-            # Build the CALL procedure syntax safely
-            # Note: For strict security, one should ideally use param binding specific to the DB driver.
-            # Using SQLAlchemy text() with bound parameters:
-            # Example: CALL sp_name(:param1, :param2)
-            bind_placeholders = ", ".join([f":{k}" for k in submitted_params.keys()])
-            call_stmt = text(f"CALL {module.stored_proc_name}({bind_placeholders})")
+            connection_model = ServerConnection.query.get(module.connection_id) if getattr(module, 'connection_id', None) else None
             
-            with connection.begin():
-                result = connection.execute(call_stmt, submitted_params)
-            connection.close()
+            if connection_model and connection_model.server_type == 'sqlserver':
+                # --- SQL SERVER EXECUTION ---
+                conn_str = f"DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={connection_model.host};UID={connection_model.username};PWD={connection_model.password}"
+                if module.database_name:
+                    conn_str += f";DATABASE={module.database_name}"
+                    
+                # We need autocommit=True for some system stored procedures
+                odbc_conn = pyodbc.connect(conn_str, autocommit=True)
+                cursor = odbc_conn.cursor()
+                
+                if module.object_type == 'job':
+                    # Execute SQL Server Agent Job using msdb database
+                    job_name = module.stored_proc_name
+                    cursor.execute(f"EXEC msdb.dbo.sp_start_job N'{job_name}'")
+                    flash(f'SQL Server Job "{job_name}" has been requested to start.', 'success')
+                else:
+                    # Execute Stored Procedure via pyodbc
+                    # Extract parameter values in order or by name depending on setup. 
+                    # For simplicity, passing them logically if there are any.
+                    if parameters:
+                        params_list = [submitted_params.get(p['name']) for p in parameters]
+                        placeholders = ",".join(["?" for _ in params_list])
+                        cursor.execute(f"EXEC {module.stored_proc_name} {placeholders}", params_list)
+                    else:
+                        cursor.execute(f"EXEC {module.stored_proc_name}")
+                        
+                    flash(f'Stored Procedure "{module.stored_proc_name}" executed successfully.', 'success')
+                
+                cursor.close()
+                odbc_conn.close()
+                
+            else:
+                # --- MYSQL / DEFAULT ROUTING (Legacy Support) ---
+                if getattr(module, 'target_connection', None):
+                    # Use custom connection string if provided
+                    engine = create_engine(module.target_connection)
+                    connection = engine.connect()
+                else:
+                    # Use default portal connection (db.engine)
+                    connection = db.engine.connect()
+                    
+                bind_placeholders = ", ".join([f":{k}" for k in submitted_params.keys()])
+                call_stmt = text(f"CALL {module.stored_proc_name}({bind_placeholders})")
+                
+                with connection.begin():
+                    result = connection.execute(call_stmt, submitted_params)
+                connection.close()
+                flash(f'Module {module.name} executed successfully!', 'success')
             
             # Log success
             log = AuditLog(user_id=current_user.id, module_id=module.id, 
                            parameters_used=json.dumps(submitted_params), status='success', message='Executed successfully.')
             db.session.add(log)
             db.session.commit()
-            
-            flash(f'Module {module.name} executed successfully!', 'success')
             
         except Exception as e:
             # Log error
