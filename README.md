@@ -12,7 +12,7 @@ Open terminal and run:
 ```bash
 sudo apt update
 sudo apt upgrade -y
-sudo apt install python3 python3-pip python3-venv nginx mysql-server libmysqlclient-dev pkg-config -y
+sudo apt install python3 python3-pip python3-venv nginx mysql-server libmysqlclient-dev pkg-config git -y
 ```
 
 ### 2. Configure MySQL Database
