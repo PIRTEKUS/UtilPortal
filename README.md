@@ -127,23 +127,43 @@ sudo systemctl start utilportal
 sudo systemctl enable utilportal
 ```
 
-### 7. Configure Nginx Reverse Proxy
+### 7. Configure Nginx Reverse Proxy and SSL (Required for SSO)
 
-Create an Nginx server block to point to the Gunicorn socket.
+Microsoft Azure AD exclusively requires HTTPS for all redirect URIs (unless testing on `localhost`). We will generate a self-signed SSL certificate so Nginx can securely serve the application.
 
+Generate the SSL certificate:
+```bash
+sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout /etc/ssl/private/nginx-selfsigned.key -out /etc/ssl/certs/nginx-selfsigned.crt -subj "/C=US/ST=State/L=City/O=Organization/CN=your_domain_or_ip"
+```
+
+Create the Nginx server block:
 ```bash
 sudo nano /etc/nginx/sites-available/utilportal
 ```
 
-Add this configuration (replace `your_domain_or_ip`):
+Add this complete configuration (replace `your_domain_or_ip` in both places):
 ```nginx
 server {
     listen 80;
     server_name your_domain_or_ip;
+    
+    # Automatically redirect all HTTP traffic to HTTPS
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name your_domain_or_ip;
+
+    ssl_certificate /etc/ssl/certs/nginx-selfsigned.crt;
+    ssl_certificate_key /etc/ssl/private/nginx-selfsigned.key;
 
     location / {
         include proxy_params;
         proxy_pass http://unix:/opt/utilportal/utilportal.sock;
+        
+        # Ensure Flask knows it's being accessed via HTTPS
+        proxy_set_header X-Forwarded-Proto https;
     }
 
     # Optional: Serve static files directly via Nginx
@@ -155,7 +175,10 @@ server {
 
 Enable the site and restart Nginx:
 ```bash
-sudo ln -s /etc/nginx/sites-available/utilportal /etc/nginx/sites-enabled
+# If the default site is still enabled, remove it to prevent conflicts
+sudo rm -f /etc/nginx/sites-enabled/default
+
+sudo ln -s /etc/nginx/sites-available/utilportal /etc/nginx/sites-enabled/
 sudo nginx -t
 sudo systemctl restart nginx
 ```
