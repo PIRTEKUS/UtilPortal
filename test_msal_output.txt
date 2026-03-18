@@ -1,0 +1,1 @@
+https://login.microsoftonline.com/f13fe9f6-5754-4b16-b2d2-b74568495652/oauth2/v2.0/authorize?client_id=1abbe74a-ec1a-4cc4-b623-60c3ebfbb5b5&response_type=code&redirect_uri=http%3A%2F%2Flocalhost&scope=offline_access+openid+profile

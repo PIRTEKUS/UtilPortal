@@ -53,8 +53,8 @@ def execute(module_id):
             connection_model = ServerConnection.query.get(module.connection_id) if getattr(module, 'connection_id', None) else None
             
             if connection_model and connection_model.server_type == 'sqlserver':
-                # --- SQL SERVER EXECUTION ---
-                conn_str = f"DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={connection_model.host};UID={connection_model.username};PWD={connection_model.password}"
+                # Use ODBC Driver 18 for SQL Server
+                conn_str = f"DRIVER={{ODBC Driver 18 for SQL Server}};SERVER={connection_model.host};UID={connection_model.username};PWD={connection_model.password};TrustServerCertificate=yes;"
                 if module.database_name:
                     conn_str += f";DATABASE={module.database_name}"
                     

@@ -15,7 +15,7 @@ sudo apt upgrade -y
 sudo apt install python3 python3-pip python3-venv nginx mysql-server libmysqlclient-dev pkg-config git curl -y
 ```
 
-Next, you need to install the **Microsoft ODBC Driver 17** and **unixODBC** development headers so the application can communicate with SQL Server databases:
+Next, you need to install the **Microsoft ODBC Driver 18** and **unixODBC** development headers so the application can communicate with SQL Server databases:
 
 ```bash
 # Add the Microsoft repository key and list
@@ -24,7 +24,7 @@ curl https://packages.microsoft.com/config/ubuntu/22.04/prod.list | sudo tee /et
 
 # Update apt and install the ODBC driver and unixODBC
 sudo apt-get update
-sudo ACCEPT_EULA=Y apt-get install -y msodbcsql17
+sudo ACCEPT_EULA=Y apt-get install -y msodbcsql18
 sudo apt-get install -y unixodbc-dev
 ```
 
