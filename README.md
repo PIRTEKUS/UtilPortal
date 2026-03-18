@@ -75,13 +75,9 @@ AZURE_CLIENT_SECRET=
 ```
 
 ### 5. Initialize the Database Schema
-With the virtual environment activated, run the Flask initialization commands to build the SQL tables:
+With the virtual environment activated, run the Python initialization script to build the SQL tables and create the default admin user:
 ```bash
-# Later, you will run command(s) like this (once we create the DB init script)
-# flask shell
-# >>> from models import db
-# >>> db.create_all()
-# >>> exit()
+python init_db.py
 ```
 
 ### 6. Setup Gunicorn Systemd Service
