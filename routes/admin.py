@@ -72,8 +72,8 @@ def get_databases(conn_id):
         
     try:
         # Use ODBC Driver 18 for SQL Server. This natively supports OpenSSL 3.0.
-        # TrustServerCertificate=yes is added to bypass strict cert validation for modern driver
-        conn_str = f"DRIVER={{ODBC Driver 18 for SQL Server}};SERVER={conn.host};UID={conn.username};PWD={conn.password};TrustServerCertificate=yes;"
+        # Encrypt=no bypasses strict TLS handshake requirements for older on-prem SQL Servers
+        conn_str = f"DRIVER={{ODBC Driver 18 for SQL Server}};SERVER={conn.host};UID={conn.username};PWD={conn.password};Encrypt=no;TrustServerCertificate=yes;"
         odbc_conn = pyodbc.connect(conn_str, autocommit=True)
         cursor = odbc_conn.cursor()
         cursor.execute("SELECT name FROM sys.databases WHERE state_desc = 'ONLINE'")
