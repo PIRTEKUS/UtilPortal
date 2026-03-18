@@ -43,13 +43,16 @@ EXIT;
 It's best practice to run web applications out of `/var/www` or `/opt`. We will use `/opt/utilportal`.
 
 ```bash
-# Clone the repository (or copy your files) to /opt/utilportal
+# Create the directory
 sudo mkdir -p /opt/utilportal
 # Make your ubuntu user the owner
 sudo chown -R $USER:$USER /opt/utilportal
+
+# Clone the repository
+git clone https://github.com/PIRTEKUS/UtilPortal.git /opt/utilportal
 cd /opt/utilportal
 
-# Assuming files are here now, create a virtual environment
+# Create a virtual environment
 python3 -m venv venv
 
 # Activate and install dependencies
