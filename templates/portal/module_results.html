@@ -9,6 +9,11 @@
                 <div class="d-flex justify-content-between align-items-center">
                     <h4 class="mb-0 text-success"><i class="bi bi-check-circle-fill me-2"></i>{{ module.name }} Results</h4>
                     <div>
+                        {% if result_sets %}
+                        <button onclick="exportToExcel()" class="btn btn-sm btn-success me-2">
+                            <i class="bi bi-file-earmark-excel me-1"></i>Export Excel
+                        </button>
+                        {% endif %}
                         <a href="{{ url_for('portal.execute', module_id=module.id) }}" class="btn btn-sm btn-outline-primary me-2">
                             <i class="bi bi-arrow-repeat me-1"></i>Run Again
                         </a>
@@ -32,7 +37,7 @@
                             
                             {% if result.rows %}
                                 <div class="table-responsive">
-                                    <table class="table table-dark table-hover table-bordered table-sm align-middle">
+                                    <table class="table table-dark table-hover table-bordered table-sm align-middle result-table">
                                         <thead class="table-active border-secondary">
                                             <tr>
                                                 {% for col in result.columns %}
@@ -63,4 +68,28 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+    function exportToExcel() {
+        var wb = XLSX.utils.book_new();
+        var tables = document.querySelectorAll('.result-table');
+        
+        if (tables.length === 0) return;
+        
+        tables.forEach(function(table, index) {
+            var ws = XLSX.utils.table_to_sheet(table);
+            var sheetName = "Result Set " + (index + 1);
+            XLSX.utils.book_append_sheet(wb, ws, sheetName);
+        });
+        
+        var moduleName = "{{ module.name|replace(' ', '_')|replace('\"', '')|replace('\'', '') }}";
+        var dateStr = new Date().toISOString().slice(0,10);
+        var filename = moduleName + "_Results_" + dateStr + ".xlsx";
+        
+        XLSX.writeFile(wb, filename);
+    }
+</script>
 {% endblock %}
