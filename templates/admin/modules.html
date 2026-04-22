@@ -53,8 +53,22 @@
                                 </td>
                                 <td>{{ module.users|length }}</td>
                                 <td class="text-end">
-                                    <button class="btn btn-sm btn-outline-info me-1"><i
-                                            class="bi bi-pencil"></i></button>
+                                    <button class="btn btn-sm btn-outline-info me-1" 
+                                        data-bs-toggle="modal" 
+                                        data-bs-target="#editModuleModal"
+                                        data-id="{{ module.id }}"
+                                        data-name="{{ module.name }}"
+                                        data-desc="{{ module.description or '' }}"
+                                        data-type="{{ 'custom' if module.custom_script_path else 'generic' }}"
+                                        data-conn="{{ module.connection_id or '' }}"
+                                        data-obj="{{ module.object_type or '' }}"
+                                        data-db="{{ module.database_name or '' }}"
+                                        data-sp="{{ module.stored_proc_name or '' }}"
+                                        data-params="{{ module.parameters_json or '' }}"
+                                        data-script="{{ module.custom_script_path or '' }}"
+                                        onclick="openEditModal(this)">
+                                        <i class="bi bi-pencil"></i>
+                                    </button>
                                     <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
                                 </td>
                             </tr>
@@ -168,6 +182,87 @@
         </div>
     </div>
 </div>
+<!-- Edit Module Modal -->
+<div class="modal fade" id="editModuleModal" tabindex="-1" aria-hidden="true" data-bs-theme="dark">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content bg-dark">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title">Edit Module</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="editModuleForm" action="" method="post">
+                <div class="modal-body text-light">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Module Name *</label>
+                            <input type="text" name="name" id="edit_name" class="form-control" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Type *</label>
+                            <select name="type" class="form-select" id="edit_moduleTypeSelect" onchange="toggleTypeSpecificsEdit()">
+                                <option value="generic">Database Object (SP/Job)</option>
+                                <option value="custom">Custom Python Script</option>
+                            </select>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Description</label>
+                            <textarea name="description" id="edit_description" class="form-control" rows="2"></textarea>
+                        </div>
+
+                        <div class="col-12 edit-generic-fields">
+                            <hr class="border-secondary">
+                            <h6 class="text-info">Database Configuration</h6>
+                        </div>
+                        <div class="col-md-6 edit-generic-fields">
+                            <label class="form-label">Server Connection *</label>
+                            <select name="connection_id" class="form-select" id="edit_connectionSelect" onchange="handleConnectionChangeEdit()">
+                                <option value="">-- Select Connection --</option>
+                                {% for conn in connections %}
+                                <option value="{{ conn.id }}" data-type="{{ conn.server_type }}">{{ conn.name }} ({{ conn.server_type }})</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6 edit-generic-fields">
+                            <label class="form-label">Object Type *</label>
+                            <select name="object_type" class="form-select" id="edit_objectTypeSelect" onchange="handleObjectTypeChangeEdit()">
+                                <option value="sp">Stored Procedure</option>
+                                <option value="job">SQL Server Job</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6 edit-generic-fields" id="edit_databaseContainer">
+                            <label class="form-label">Target Database</label>
+                            <select name="database_name" class="form-select" id="edit_databaseSelect">
+                                <option value="">-- Select DB (Select Connection first) --</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6 edit-generic-fields">
+                            <label class="form-label" id="edit_spLabel">Stored Procedure Name / Job Name</label>
+                            <input type="text" name="stored_proc_name" id="edit_stored_proc_name" class="form-control">
+                        </div>
+                        <div class="col-12 edit-generic-fields">
+                            <label class="form-label">Parameters JSON (Optional)</label>
+                            <textarea name="parameters_json" id="edit_parameters_json" class="form-control font-monospace" rows="4"></textarea>
+                            <div class="form-text text-muted">Leave empty to dynamically fetch parameters from SP.</div>
+                        </div>
+
+                        <div class="col-12 edit-custom-fields" style="display:none;">
+                            <hr class="border-secondary">
+                            <h6 class="text-warning">Custom Script Configuration</h6>
+                        </div>
+                        <div class="col-12 edit-custom-fields" style="display:none;">
+                            <label class="form-label">Python Script Path *</label>
+                            <input type="text" name="custom_script_path" id="edit_custom_script_path" class="form-control">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer border-secondary">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Update Module</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
 <script>
     function toggleTypeSpecifics() {
         const type = document.getElementById('moduleTypeSelect').value;
@@ -238,6 +333,101 @@
                 });
         } else {
             // MySQL or other - manual entry or predefined list
+            dbSelect.innerHTML = '<option value="">Manual DB entry not fully supported yet for MySQL</option>';
+            dbSelect.disabled = false;
+        }
+    }
+
+    function openEditModal(btn) {
+        const id = btn.getAttribute('data-id');
+        document.getElementById('editModuleForm').action = `/admin/modules/edit/${id}`;
+        document.getElementById('edit_name').value = btn.getAttribute('data-name');
+        document.getElementById('edit_description').value = btn.getAttribute('data-desc');
+        document.getElementById('edit_moduleTypeSelect').value = btn.getAttribute('data-type');
+        
+        document.getElementById('edit_connectionSelect').value = btn.getAttribute('data-conn');
+        document.getElementById('edit_objectTypeSelect').value = btn.getAttribute('data-obj') || 'sp';
+        
+        document.getElementById('edit_databaseSelect').setAttribute('data-preselected', btn.getAttribute('data-db'));
+        
+        document.getElementById('edit_stored_proc_name').value = btn.getAttribute('data-sp');
+        document.getElementById('edit_parameters_json').value = btn.getAttribute('data-params');
+        document.getElementById('edit_custom_script_path').value = btn.getAttribute('data-script');
+
+        toggleTypeSpecificsEdit();
+    }
+
+    function toggleTypeSpecificsEdit() {
+        const type = document.getElementById('edit_moduleTypeSelect').value;
+        const genFields = document.querySelectorAll('.edit-generic-fields');
+        const custFields = document.querySelectorAll('.edit-custom-fields');
+
+        if (type === 'generic') {
+            genFields.forEach(el => el.style.display = 'block');
+            custFields.forEach(el => el.style.display = 'none');
+            handleObjectTypeChangeEdit(); 
+        } else {
+            genFields.forEach(el => el.style.display = 'none');
+            custFields.forEach(el => el.style.display = 'block');
+        }
+    }
+
+    function handleObjectTypeChangeEdit() {
+        const objType = document.getElementById('edit_objectTypeSelect').value;
+        const dbContainer = document.getElementById('edit_databaseContainer');
+        const spLabel = document.getElementById('edit_spLabel');
+
+        if (objType === 'job') {
+            dbContainer.style.display = 'none';
+            spLabel.textContent = 'SQL Agent Job Name *';
+        } else {
+            dbContainer.style.display = 'block';
+            spLabel.textContent = 'Stored Procedure Name *';
+            handleConnectionChangeEdit(); 
+        }
+    }
+
+    function handleConnectionChangeEdit() {
+        const connSelect = document.getElementById('edit_connectionSelect');
+        const objType = document.getElementById('edit_objectTypeSelect').value;
+        const dbSelect = document.getElementById('edit_databaseSelect');
+        const preselectedDb = dbSelect.getAttribute('data-preselected');
+
+        if (objType === 'job') return;
+
+        const selectedOption = connSelect.options[connSelect.selectedIndex];
+        if (!selectedOption || !selectedOption.value) {
+            dbSelect.innerHTML = '<option value="">-- Select DB (Select Connection first) --</option>';
+            return;
+        }
+
+        const type = selectedOption.getAttribute('data-type');
+
+        if (type === 'sqlserver') {
+            dbSelect.innerHTML = '<option value="">Loading databases...</option>';
+            dbSelect.disabled = true;
+
+            fetch(`/admin/api/connections/${selectedOption.value}/databases`)
+                .then(response => response.json())
+                .then(data => {
+                    dbSelect.innerHTML = '<option value="">-- Select Database --</option>';
+                    if (data.databases) {
+                        data.databases.forEach(db => {
+                            const isSelected = (db === preselectedDb) ? 'selected' : '';
+                            dbSelect.innerHTML += `<option value="${db}" ${isSelected}>${db}</option>`;
+                        });
+                        dbSelect.setAttribute('data-preselected', '');
+                    } else if (data.error) {
+                        dbSelect.innerHTML = `<option value="">Error: ${data.error}</option>`;
+                    }
+                })
+                .catch(err => {
+                    dbSelect.innerHTML = '<option value="">Failed to fetch DBs.</option>';
+                })
+                .finally(() => {
+                    dbSelect.disabled = false;
+                });
+        } else {
             dbSelect.innerHTML = '<option value="">Manual DB entry not fully supported yet for MySQL</option>';
             dbSelect.disabled = false;
         }

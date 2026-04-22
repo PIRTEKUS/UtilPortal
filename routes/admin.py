@@ -116,6 +116,41 @@ def create_module():
     flash(f'Module "{name}" created successfully.', 'success')
     return redirect(url_for('admin.modules'))
 
+@bp.route('/modules/edit/<int:module_id>', methods=['POST'])
+@login_required
+@admin_required
+def edit_module(module_id):
+    module = Module.query.get_or_404(module_id)
+    
+    module.name = request.form.get('name')
+    module.description = request.form.get('description')
+    mod_type = request.form.get('type')
+    
+    if mod_type == 'custom':
+        module.custom_script_path = request.form.get('custom_script_path')
+        
+        # Clear generic fields
+        module.connection_id = None
+        module.object_type = None
+        module.database_name = None
+        module.stored_proc_name = None
+        module.parameters_json = None
+    else:
+        module.connection_id = request.form.get('connection_id') or None
+        module.object_type = request.form.get('object_type')
+        module.database_name = request.form.get('database_name')
+        module.stored_proc_name = request.form.get('stored_proc_name')
+        module.parameters_json = request.form.get('parameters_json')
+        
+        # Clear custom fields
+        module.custom_script_path = None
+        
+    db.session.commit()
+    
+    flash(f'Module "{module.name}" updated successfully.', 'success')
+    return redirect(url_for('admin.modules'))
+
+
 @bp.route('/users')
 @login_required
 @admin_required
