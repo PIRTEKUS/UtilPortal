@@ -40,6 +40,49 @@ def execute(module_id):
     except json.JSONDecodeError:
         parameters = []
         
+    connection_model = ServerConnection.query.get(module.connection_id) if getattr(module, 'connection_id', None) else None
+    
+    # Dynamic Parameter Fetching for SQL Server SPs
+    if not parameters and module.object_type == 'sp' and connection_model and connection_model.server_type == 'sqlserver':
+        try:
+            conn_str = f"DRIVER={{ODBC Driver 18 for SQL Server}};SERVER={connection_model.host};UID={connection_model.username};PWD={connection_model.password};Encrypt=Optional;TrustServerCertificate=yes;"
+            if module.database_name:
+                conn_str += f";DATABASE={module.database_name}"
+            
+            odbc_conn = pyodbc.connect(conn_str, autocommit=True)
+            cursor = odbc_conn.cursor()
+            
+            query = """
+            SELECT p.name AS ParameterName, t.name AS DataType
+            FROM sys.parameters p
+            INNER JOIN sys.types t ON p.user_type_id = t.user_type_id
+            WHERE p.object_id = OBJECT_ID(?)
+            ORDER BY p.parameter_id
+            """
+            cursor.execute(query, module.stored_proc_name)
+            
+            for row in cursor.fetchall():
+                param_name = row.ParameterName.replace('@', '')
+                data_type = row.DataType.lower()
+                
+                input_type = 'text'
+                if data_type in ('int', 'bigint', 'smallint', 'tinyint', 'decimal', 'numeric', 'float', 'real'):
+                    input_type = 'number'
+                elif data_type in ('varchar', 'nvarchar', 'text', 'ntext') and 'max' not in data_type:
+                    input_type = 'text'
+                    
+                parameters.append({
+                    'name': row.ParameterName,
+                    'label': param_name.replace('_', ' ').title(),
+                    'type': input_type,
+                    'required': True
+                })
+                
+            cursor.close()
+            odbc_conn.close()
+        except Exception as e:
+            flash(f"Warning: Could not fetch parameters dynamically from SP: {str(e)}", "warning")
+            
     if request.method == 'POST':
         from sqlalchemy import text, create_engine
         
@@ -49,9 +92,9 @@ def execute(module_id):
             p_name = param.get('name')
             submitted_params[p_name] = request.form.get(p_name)
             
-        try:
-            connection_model = ServerConnection.query.get(module.connection_id) if getattr(module, 'connection_id', None) else None
+        result_sets = []
             
+        try:
             if connection_model and connection_model.server_type == 'sqlserver':
                 # Use ODBC Driver 18 for SQL Server with Encrypt=Optional
                 conn_str = f"DRIVER={{ODBC Driver 18 for SQL Server}};SERVER={connection_model.host};UID={connection_model.username};PWD={connection_model.password};Encrypt=Optional;TrustServerCertificate=yes;"
@@ -78,6 +121,17 @@ def execute(module_id):
                     else:
                         cursor.execute(f"EXEC {module.stored_proc_name}")
                         
+                    while True:
+                        if cursor.description:
+                            columns = [col[0] for col in cursor.description]
+                            rows = cursor.fetchall()
+                            result_sets.append({
+                                'columns': columns,
+                                'rows': [dict(zip(columns, row)) for row in rows]
+                            })
+                        if not cursor.nextset():
+                            break
+                            
                     flash(f'Stored Procedure "{module.stored_proc_name}" executed successfully.', 'success')
                 
                 cursor.close()
@@ -97,15 +151,30 @@ def execute(module_id):
                 call_stmt = text(f"CALL {module.stored_proc_name}({bind_placeholders})")
                 
                 with connection.begin():
+                    # For legacy routing we only capture the first result set for simplicity
                     result = connection.execute(call_stmt, submitted_params)
+                    if result.returns_rows:
+                        columns = result.keys()
+                        rows = result.fetchall()
+                        result_sets.append({
+                            'columns': columns,
+                            'rows': [dict(zip(columns, row)) for row in rows]
+                        })
                 connection.close()
                 flash(f'Module {module.name} executed successfully!', 'success')
             
             # Log success
+            log_msg = 'Executed successfully.'
+            if result_sets:
+                log_msg += f' Returned {len(result_sets)} result set(s).'
+                
             log = AuditLog(user_id=current_user.id, module_id=module.id, 
-                           parameters_used=json.dumps(submitted_params), status='success', message='Executed successfully.')
+                           parameters_used=json.dumps(submitted_params), status='success', message=log_msg)
             db.session.add(log)
             db.session.commit()
+            
+            if result_sets:
+                return render_template('portal/module_results.html', module=module, result_sets=result_sets)
             
         except Exception as e:
             # Log error

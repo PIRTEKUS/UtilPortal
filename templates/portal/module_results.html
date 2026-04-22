@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}{{ module.name }} Results{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-10">
+        <div class="card shadow border-success mb-4">
+            <div class="card-header bg-dark border-secondary">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h4 class="mb-0 text-success"><i class="bi bi-check-circle-fill me-2"></i>{{ module.name }} Results</h4>
+                    <div>
+                        <a href="{{ url_for('portal.execute', module_id=module.id) }}" class="btn btn-sm btn-outline-primary me-2">
+                            <i class="bi bi-arrow-repeat me-1"></i>Run Again
+                        </a>
+                        <a href="{{ url_for('portal.dashboard') }}" class="btn btn-sm btn-outline-secondary">
+                            <i class="bi bi-list me-1"></i>Dashboard
+                        </a>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body">
+                {% if not result_sets %}
+                    <div class="alert alert-info bg-dark border-info text-info">
+                        <i class="bi bi-info-circle me-1"></i> Execution completed successfully, but no data was returned.
+                    </div>
+                {% else %}
+                    {% for result in result_sets %}
+                        <div class="mb-4 mt-2">
+                            {% if result_sets|length > 1 %}
+                                <h5 class="text-light mb-3 border-bottom border-secondary pb-2">Result Set {{ loop.index }}</h5>
+                            {% endif %}
+                            
+                            {% if result.rows %}
+                                <div class="table-responsive">
+                                    <table class="table table-dark table-hover table-bordered table-sm align-middle">
+                                        <thead class="table-active border-secondary">
+                                            <tr>
+                                                {% for col in result.columns %}
+                                                    <th scope="col">{{ col }}</th>
+                                                {% endfor %}
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for row in result.rows %}
+                                                <tr>
+                                                    {% for col in result.columns %}
+                                                        <td>{{ row[col] }}</td>
+                                                    {% endfor %}
+                                                </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            {% else %}
+                                <div class="alert alert-secondary bg-dark border-secondary text-muted">
+                                    No rows found in this result set.
+                                </div>
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
