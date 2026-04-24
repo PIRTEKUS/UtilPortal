@@ -26,8 +26,13 @@ deactivate
 echo "[4/4] Restarting utilportal service..."
 systemctl restart utilportal
 
+# Make the script executable for future runs
+chmod +x /opt/utilportal/update.sh
+
 echo ""
 echo "=========================================="
 echo "  Done! Portal restarted successfully."
+echo "  TIP: If you get 30s timeouts, check"
+echo "  Gunicorn --timeout in the .service file."
 echo "=========================================="
 echo ""
