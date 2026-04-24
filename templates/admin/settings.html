@@ -3,43 +3,78 @@
 {% block title %}Application Settings{% endblock %}
 
 {% block content %}
-<div class="container-fluid mt-4">
-    <div class="row mb-4">
-        <div class="col-md-6">
-            <h2><i class="fas fa-cogs me-2"></i>Settings</h2>
-            <p class="text-muted">Configure application-wide settings.</p>
+<div class="row mb-4">
+    <div class="col-12 d-flex justify-content-between align-items-center">
+        <div>
+            <h3 class="fw-bold"><i class="fas fa-cogs me-2 text-secondary"></i>Application Settings</h3>
+            <p class="text-muted mb-0">Configure branding and company information displayed across the portal.</p>
         </div>
+        <a href="{{ url_for('admin.dashboard') }}" class="btn btn-outline-secondary">Back</a>
     </div>
+</div>
 
-    <div class="row">
-        <div class="col-md-6">
-            <div class="card shadow-sm border-0">
-                <div class="card-header bg-light">
-                    <h5 class="mb-0"><i class="fas fa-image me-2"></i>Company Logo</h5>
+<form action="{{ url_for('admin.settings') }}" method="POST" enctype="multipart/form-data">
+    <div class="row g-4">
+
+        <!-- Company Logo Card -->
+        <div class="col-md-5">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-light fw-semibold">
+                    <i class="fas fa-image me-2 text-primary"></i>Company Logo
                 </div>
                 <div class="card-body">
                     {% if logo %}
-                    <div class="mb-4 text-center p-3 border rounded bg-light">
+                    <div class="mb-3 text-center p-3 border rounded bg-light">
                         <p class="text-muted small mb-2">Current Logo:</p>
                         <img src="{{ url_for('static', filename='uploads/' + logo) }}" alt="Company Logo" style="max-height: 80px; max-width: 100%;">
                     </div>
                     {% else %}
                     <div class="alert alert-info">
-                        <i class="fas fa-info-circle me-2"></i> No custom logo set. The default text logo is currently displayed.
+                        <i class="fas fa-info-circle me-2"></i>No custom logo is set. The default text logo is displayed.
                     </div>
                     {% endif %}
-                    
-                    <form action="{{ url_for('admin.settings') }}" method="POST" enctype="multipart/form-data">
-                        <div class="mb-3">
-                            <label class="form-label">Upload New Logo</label>
-                            <input class="form-control" type="file" name="logo" accept="image/png, image/jpeg, image/svg+xml, image/webp" required>
-                            <div class="form-text">Recommended format: PNG or SVG with transparent background. Max height 40px displayed.</div>
-                        </div>
-                        <button type="submit" class="btn btn-primary"><i class="fas fa-upload me-1"></i> Upload Logo</button>
-                    </form>
+
+                    <div class="mb-3">
+                        <label class="form-label">Upload New Logo</label>
+                        <input class="form-control" type="file" name="logo" accept="image/png, image/jpeg, image/svg+xml, image/webp">
+                        <div class="form-text">PNG or SVG with transparent background recommended. Max display height: 40px.</div>
+                    </div>
                 </div>
             </div>
         </div>
+
+        <!-- Company Info Card -->
+        <div class="col-md-7">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-light fw-semibold">
+                    <i class="fas fa-building me-2 text-primary"></i>Company Information
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label">Company Name</label>
+                        <input type="text" class="form-control" name="company_name" value="{{ company_name }}" placeholder="e.g. PIRTEK USA">
+                        <div class="form-text">Displayed in the browser tab and other areas of the portal.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Tagline / Department</label>
+                        <input type="text" class="form-control" name="company_tagline" value="{{ company_tagline }}" placeholder="e.g. IT Self-Service Portal">
+                        <div class="form-text">A short subtitle shown under the logo or header.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">IT Support / Contact Email</label>
+                        <input type="email" class="form-control" name="company_email" value="{{ company_email }}" placeholder="e.g. it-support@company.com">
+                        <div class="form-text">Shown to users on the "no modules" page and other help screens.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
     </div>
-</div>
+
+    <div class="mt-4 text-end">
+        <button type="submit" class="btn btn-primary px-5">
+            <i class="fas fa-save me-2"></i>Save Settings
+        </button>
+    </div>
+</form>
 {% endblock %}

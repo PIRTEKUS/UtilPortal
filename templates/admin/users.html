@@ -77,6 +77,10 @@
                                         </button>
                                         {% endif %}
                                     </form>
+                                    <button class="btn btn-sm btn-outline-primary me-1" data-bs-toggle="modal"
+                                        data-bs-target="#editRolesModal{{ user.id }}">
+                                        <i class="bi bi-person-badge me-1"></i> Roles
+                                    </button>
                                     <button class="btn btn-sm btn-outline-info" data-bs-toggle="modal"
                                         data-bs-target="#editUserModal{{ user.id }}">
                                         <i class="bi bi-shield-lock me-1"></i> Permissions
@@ -203,4 +207,57 @@
         </div>
     </div>
 </div>
+
+{# --- Per-user Roles Modals (outside the table) --- #}
+{% for user in users %}
+<div class="modal fade" id="editRolesModal{{ user.id }}" tabindex="-1" aria-hidden="true" data-bs-theme="dark">
+    <div class="modal-dialog">
+        <div class="modal-content bg-dark">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title"><i class="bi bi-person-badge me-2 text-primary"></i>Roles: {{ user.email }}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form action="{{ url_for('admin.update_user_roles', user_id=user.id) }}" method="post">
+                <div class="modal-body text-light">
+                    {% if user.is_admin() %}
+                    <div class="alert alert-warning border-warning bg-transparent text-warning">
+                        <i class="bi bi-exclamation-triangle"></i> Admin users bypass all role restrictions.
+                    </div>
+                    {% endif %}
+                    <p class="text-muted small">Select the roles to assign to this user. Access is inherited from all assigned roles.</p>
+                    <div style="max-height: 350px; overflow-y: auto;">
+                        {% for role in roles %}
+                        <div class="form-check mb-2 p-2 border border-secondary rounded">
+                            <input class="form-check-input" type="checkbox" name="role_ids"
+                                value="{{ role.id }}" id="ur_{{ user.id }}_{{ role.id }}"
+                                {% if role in user.roles %}checked{% endif %}
+                                {% if user.is_admin() %}disabled{% endif %}>
+                            <label class="form-check-label w-100" for="ur_{{ user.id }}_{{ role.id }}">
+                                <span class="fw-semibold text-primary">{{ role.name }}</span>
+                                {% if role.description %}
+                                <small class="d-block text-muted">{{ role.description }}</small>
+                                {% endif %}
+                                <small class="text-info">
+                                    <i class="fas fa-folder me-1"></i>{{ role.folders|length }} folders &nbsp;
+                                    <i class="fas fa-plug me-1"></i>{{ role.modules|length }} modules
+                                </small>
+                            </label>
+                        </div>
+                        {% else %}
+                        <div class="text-muted text-center py-3">
+                            <i class="fas fa-user-tag mb-2 d-block" style="font-size:2rem;"></i>
+                            No roles defined yet. <a href="{{ url_for('admin.roles') }}" class="text-primary">Create roles here.</a>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div class="modal-footer border-secondary">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary" {% if user.is_admin() %}disabled{% endif %}>Save Roles</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endfor %}
 {% endblock %}

@@ -307,6 +307,25 @@ def update_user_permissions(user_id):
     flash(f'Permissions updated for {user.email}.', 'success')
     return redirect(url_for('admin.users'))
 
+@bp.route('/users/<int:user_id>/roles', methods=['POST'])
+@login_required
+@admin_required
+def update_user_roles(user_id):
+    user = User.query.get_or_404(user_id)
+    if user.is_admin():
+        flash('Cannot modify roles for an Admin user.', 'warning')
+        return redirect(url_for('admin.users'))
+
+    user.roles.clear()
+    for r_id in request.form.getlist('role_ids'):
+        r = Role.query.get(int(r_id))
+        if r:
+            user.roles.append(r)
+
+    db.session.commit()
+    flash(f'Roles updated for {user.email}.', 'success')
+    return redirect(url_for('admin.users'))
+
 @bp.route('/users/<int:user_id>/toggle_admin', methods=['POST'])
 @login_required
 @admin_required
@@ -332,20 +351,40 @@ def toggle_user_admin(user_id):
 @login_required
 @admin_required
 def settings():
+    def get_setting(key):
+        s = AppSetting.query.filter_by(key=key).first()
+        return s.value if s else None
+
+    def save_setting(key, value):
+        s = AppSetting.query.filter_by(key=key).first()
+        if not s:
+            s = AppSetting(key=key, value=value)
+            db.session.add(s)
+        else:
+            s.value = value
+
     if request.method == 'POST':
+        # Save text fields
+        for field in ['company_name', 'company_tagline', 'company_email']:
+            val = request.form.get(field, '').strip()
+            save_setting(field, val)
+
+        # Logo upload
         if 'logo' in request.files and request.files['logo'].filename:
             file = request.files['logo']
             filename = secure_filename(file.filename)
-            file.save(os.path.join('static', 'uploads', filename))
-            
-            logo_setting = AppSetting.query.filter_by(key='company_logo').first()
-            if not logo_setting:
-                logo_setting = AppSetting(key='company_logo', value=filename)
-                db.session.add(logo_setting)
-            else:
-                logo_setting.value = filename
-            db.session.commit()
-            flash('Company logo updated successfully.', 'success')
-            
-    logo_setting = AppSetting.query.filter_by(key='company_logo').first()
-    return render_template('admin/settings.html', logo=logo_setting.value if logo_setting else None)
+            upload_dir = os.path.join(current_app.root_path, 'static', 'uploads')
+            os.makedirs(upload_dir, exist_ok=True)
+            file.save(os.path.join(upload_dir, filename))
+            save_setting('company_logo', filename)
+
+        db.session.commit()
+        flash('Settings saved successfully.', 'success')
+        return redirect(url_for('admin.settings'))
+
+    return render_template('admin/settings.html',
+        logo=get_setting('company_logo'),
+        company_name=get_setting('company_name') or '',
+        company_tagline=get_setting('company_tagline') or '',
+        company_email=get_setting('company_email') or '',
+    )
