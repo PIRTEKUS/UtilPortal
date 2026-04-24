@@ -16,6 +16,9 @@
 
 <body>
     <style>
+        .app-navbar {
+            background-color: {{ navbar_bg_color }} !important;
+        }
         .app-navbar .nav-link,
         .app-navbar .navbar-brand,
         .app-navbar .dropdown-toggle {
@@ -28,8 +31,7 @@
             filter: {% if navbar_font_color == '#ffffff' or navbar_font_color == '#fff' %}invert(1){% else %}none{% endif %};
         }
     </style>
-    <nav class="app-navbar navbar navbar-expand-lg border-bottom mb-4"
-         style="background-color: {{ navbar_bg_color }};">
+    <nav class="app-navbar navbar navbar-expand-lg border-bottom mb-4">
         <div class="container-fluid">
             <a class="navbar-brand fw-bold" href="{{ url_for('auth.login') }}">
                 {% if app_logo %}
