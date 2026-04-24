@@ -29,9 +29,13 @@ def create_app(config_class=Config):
     
     @app.context_processor
     def inject_app_settings():
-        from models import AppSetting
-        logo_setting = AppSetting.query.filter_by(key='company_logo').first()
-        return dict(app_logo=logo_setting.value if logo_setting else None)
+        try:
+            from models import AppSetting
+            logo_setting = AppSetting.query.filter_by(key='company_logo').first()
+            return dict(app_logo=logo_setting.value if logo_setting else None)
+        except Exception:
+            # If the table doesn't exist yet or DB is locked, don't crash the whole app
+            return dict(app_logo=None)
 
     # Main entry point redirects to login for now
     @app.route('/')

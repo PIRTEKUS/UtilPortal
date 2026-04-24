@@ -100,10 +100,15 @@ def login_sso_callback():
         
     user = User.query.filter_by(email=email).first()
     if not user:
-        user = User(email=email, role='user') # default role
-        db.session.add(user)
-        db.session.commit()
-        
+        try:
+            user = User(email=email, role='user') # default role
+            db.session.add(user)
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            flash(f"Error creating user account: {str(e)}", "danger")
+            return redirect(url_for("auth.login"))
+            
     login_user(user)
     
     if user.is_admin():
