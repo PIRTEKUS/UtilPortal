@@ -133,6 +133,7 @@ class AuditLog(db.Model):
     parameters_used = db.Column(db.Text)
     status = db.Column(db.String(50))  # 'running', 'success', or 'error'
     message = db.Column(db.Text)
+    pid = db.Column(db.Integer, nullable=True)
 
     user = db.relationship('User', backref=db.backref('audit_logs', lazy=True))
     module = db.relationship('Module', backref=db.backref('audit_logs', lazy=True))

@@ -39,6 +39,40 @@ def activity():
     logs = AuditLog.query.order_by(AuditLog.timestamp.desc()).limit(200).all()
     return render_template('admin/activity.html', logs=logs)
 
+@bp.route('/activity/<int:log_id>/stop', methods=['POST'])
+@login_required
+@admin_required
+def stop_activity(log_id):
+    import signal
+    log = AuditLog.query.get_or_404(log_id)
+    if log.status != 'running':
+        flash('This execution is no longer running.', 'info')
+        return redirect(url_for('admin.activity'))
+        
+    if not log.pid:
+        flash('Cannot stop this execution (no PID recorded).', 'danger')
+        return redirect(url_for('admin.activity'))
+        
+    try:
+        # Kill the process
+        os.kill(log.pid, signal.SIGTERM)
+        
+        log.status = 'error'
+        log.message = 'Execution forcefully stopped by admin.'
+        from datetime import datetime, timezone as tz
+        log.end_time = datetime.now(tz.utc)
+        db.session.commit()
+        flash(f'Execution {log_id} has been forcefully stopped.', 'success')
+    except ProcessLookupError:
+        log.status = 'error'
+        log.message = 'Process had already terminated.'
+        db.session.commit()
+        flash('Process was already terminated.', 'info')
+    except Exception as e:
+        flash(f'Error stopping process: {str(e)}', 'danger')
+        
+    return redirect(url_for('admin.activity'))
+
 # --- CONNECTIONS ---
 @bp.route('/connections')
 @login_required

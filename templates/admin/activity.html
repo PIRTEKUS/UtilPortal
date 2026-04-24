@@ -70,6 +70,7 @@
                         <th>Finished</th>
                         <th>Duration</th>
                         <th>Message</th>
+                        <th class="text-end">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -120,10 +121,22 @@
                             {% endif %}
                         </td>
                         <td class="small text-muted">{{ log.message or '—' }}</td>
+                        <td class="text-end">
+                            {% if log.status == 'running' and log.pid %}
+                            <form action="{{ url_for('admin.stop_activity', log_id=log.id) }}" method="post" class="d-inline"
+                                  onsubmit="return confirm('Are you sure you want to forcefully stop this execution?');">
+                                <button type="submit" class="btn btn-sm btn-outline-danger">
+                                    <i class="bi bi-stop-circle me-1"></i>Stop
+                                </button>
+                            </form>
+                            {% else %}
+                                —
+                            {% endif %}
+                        </td>
                     </tr>
                     {% else %}
                     <tr>
-                        <td colspan="8" class="text-center py-5 text-muted">
+                        <td colspan="9" class="text-center py-5 text-muted">
                             <i class="bi bi-inbox display-4 d-block mb-2"></i>
                             No execution history yet.
                         </td>

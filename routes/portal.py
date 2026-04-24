@@ -344,6 +344,18 @@ def execute_python_stream(module_id):
                 bufsize=1
             )
 
+            # --- Update AuditLog with PID ---
+            if log_id:
+                try:
+                    from flask import current_app
+                    with current_app.app_context():
+                        log = AuditLog.query.get(log_id)
+                        if log:
+                            log.pid = process.pid
+                            db.session.commit()
+                except Exception:
+                    pass
+
             out_queue = _queue.Queue()
 
             def _reader():
