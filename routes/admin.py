@@ -4,7 +4,7 @@ import shutil
 from flask import Blueprint, render_template, redirect, url_for, flash, request, jsonify, current_app
 from flask_login import login_required, current_user
 from werkzeug.utils import secure_filename
-from models import User, Module, ServerConnection, db, Role, Folder, AppSetting
+from models import User, Module, ServerConnection, db, Role, Folder, AppSetting, AuditLog
 from functools import wraps
 import pyodbc
 
@@ -26,10 +26,18 @@ def dashboard():
     users_count = User.query.count()
     modules_count = Module.query.count()
     connections_count = ServerConnection.query.count()
-    return render_template('admin/dashboard.html', 
-                         users_count=users_count, 
+    return render_template('admin/dashboard.html',
+                         users_count=users_count,
                          modules_count=modules_count,
                          connections_count=connections_count)
+
+# --- ACTIVITY LOG ---
+@bp.route('/activity')
+@login_required
+@admin_required
+def activity():
+    logs = AuditLog.query.order_by(AuditLog.timestamp.desc()).limit(200).all()
+    return render_template('admin/activity.html', logs=logs)
 
 # --- CONNECTIONS ---
 @bp.route('/connections')

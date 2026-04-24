@@ -223,40 +223,59 @@ def execute(module_id):
 @login_required
 def execute_python_stream(module_id):
     module = Module.query.get_or_404(module_id)
-    
+
     allowed_modules = get_user_allowed_modules(current_user)
     if module not in allowed_modules:
         abort(403)
+
+    # Capture these before entering the generator (no request context inside)
+    user_id = current_user.id
+    entry_file_arg = request.args.get('entry_file')
 
     def generate():
         import tempfile
         import shutil
         import threading
         import queue as _queue
-        
+        from datetime import datetime, timezone as tz
+
         script_to_run = ""
         cwd = os.getcwd()
         python_executable = sys.executable
-        
+        log_id = None
+
+        # --- Create an AuditLog entry with status='running' ---
+        try:
+            from flask import current_app
+            log = AuditLog(
+                user_id=user_id,
+                module_id=module.id,
+                status='running',
+                message='Execution started.'
+            )
+            db.session.add(log)
+            db.session.commit()
+            log_id = log.id
+        except Exception:
+            db.session.rollback()
+
+        exit_code = 1
         try:
             if module.is_python_folder:
                 cwd = os.path.join(os.getcwd(), 'instance', 'modules_data', str(module.id))
-                # Allow the user to choose a different entry file via query param
-                entry_file = request.args.get('entry_file') or module.python_entry_file or 'main.py'
-                # Security: strip any path traversal attempts
+                entry_file = entry_file_arg or module.python_entry_file or 'main.py'
                 entry_file = entry_file.replace('..', '').lstrip('/')
                 script_to_run = os.path.join(cwd, entry_file)
                 if not os.path.exists(script_to_run):
                     yield f"data: ERROR: Entry file '{entry_file}' not found in uploaded zip.\n\n"
                     return
             elif module.custom_code:
-                # Direct code: create a temporary directory to act as the module folder
                 cwd = tempfile.mkdtemp(prefix=f"module_{module.id}_")
                 script_to_run = os.path.join(cwd, "main.py")
                 with open(script_to_run, 'w') as f:
                     f.write(module.custom_code.replace('\r\n', '\n'))
-                    
-            # Virtual Environment Logic
+
+            # --- Virtual Environment ---
             venv_dir = os.path.join(cwd, 'venv')
             if os.name == 'nt':
                 venv_python = os.path.join(venv_dir, 'Scripts', 'python.exe')
@@ -264,7 +283,7 @@ def execute_python_stream(module_id):
             else:
                 venv_python = os.path.join(venv_dir, 'bin', 'python')
                 venv_pip = os.path.join(venv_dir, 'bin', 'pip')
-                
+
             if not os.path.exists(venv_dir):
                 yield f"data: [Setup] Creating isolated virtual environment...\n\n"
                 subprocess.run([sys.executable, "-m", "venv", "venv"], cwd=cwd, check=True)
@@ -272,17 +291,12 @@ def execute_python_stream(module_id):
                 req_file = os.path.join(cwd, 'requirements.txt')
                 if not os.path.exists(req_file):
                     yield f"data: [Setup] No requirements.txt found. Scanning imports to generate one...\n\n"
-
-                    # Step 1: Install pipreqs into the module venv first
                     subprocess.run(
                         [venv_pip, "install", "--no-cache-dir", "--quiet", "pipreqs"],
                         cwd=cwd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
                     )
-
-                    # Step 2: Now use the venv's pipreqs binary (it now exists)
                     pipreqs_bin = os.path.join(venv_dir,
                         'Scripts' if os.name == 'nt' else 'bin', 'pipreqs')
-
                     if os.path.exists(pipreqs_bin):
                         req_proc = subprocess.Popen(
                             [pipreqs_bin, "--force", "--ignore", "venv", "."],
@@ -295,13 +309,12 @@ def execute_python_stream(module_id):
                                 yield f"data: [pipreqs] {stripped}\n\n"
                         req_proc.wait()
                     else:
-                        yield f"data: [Setup] pipreqs binary not found after install, skipping auto-generation.\n\n"
+                        yield f"data: [Setup] pipreqs binary not found after install, skipping.\n\n"
 
                     if os.path.exists(req_file):
                         yield f"data: [Setup] requirements.txt generated successfully.\n\n"
                     else:
-                        yield f"data: [Setup] WARNING: Could not auto-generate requirements.txt. Continuing without dependencies.\n\n"
-                        # Create empty file so pip install step is still skipped cleanly
+                        yield f"data: [Setup] WARNING: Could not auto-generate requirements.txt.\n\n"
                         open(req_file, 'w').close()
 
                 if os.path.exists(req_file) and os.path.getsize(req_file) > 0:
@@ -317,7 +330,7 @@ def execute_python_stream(module_id):
                             yield f"data: [pip] {stripped}\n\n"
                     pip_proc.wait()
                 yield f"data: [Setup] Environment ready.\n\n"
-            
+
             python_executable = venv_python
 
             yield f"data: Starting execution of module: {module.name}...\n\n"
@@ -331,9 +344,6 @@ def execute_python_stream(module_id):
                 bufsize=1
             )
 
-            # Use a queue + background thread so we can send SSE keepalive
-            # pings while waiting for output, preventing nginx from timing out
-            # on long-running modules that go quiet between operations.
             out_queue = _queue.Queue()
 
             def _reader():
@@ -355,6 +365,7 @@ def execute_python_stream(module_id):
                     if kind == 'data':
                         yield f"data: {payload}\n\n"
                     elif kind == 'done':
+                        exit_code = payload
                         yield f"data: \n\n"
                         yield f"data: Process exited with code {payload}\n\n"
                         break
@@ -362,13 +373,28 @@ def execute_python_stream(module_id):
                         yield f"data: ERROR: {payload}\n\n"
                         break
                 except _queue.Empty:
-                    # No output for 15s — send an SSE comment to keep nginx alive
                     yield ": keepalive\n\n"
 
         except Exception as e:
             yield f"data: Execution Failed: {str(e)}\n\n"
         finally:
+            # --- Update AuditLog with end time and final status ---
+            if log_id:
+                try:
+                    log = AuditLog.query.get(log_id)
+                    if log:
+                        log.end_time = datetime.now(tz.utc)
+                        log.status = 'success' if exit_code == 0 else 'error'
+                        log.message = f'Exited with code {exit_code}.'
+                        db.session.commit()
+                except Exception:
+                    db.session.rollback()
+
             if not module.is_python_folder and module.custom_code and os.path.exists(cwd):
                 shutil.rmtree(cwd, ignore_errors=True)
 
-    return Response(stream_with_context(generate()), mimetype='text/event-stream')
+    resp = Response(stream_with_context(generate()), mimetype='text/event-stream')
+    # Tell nginx NOT to buffer this response — critical for real-time output
+    resp.headers['X-Accel-Buffering'] = 'no'
+    resp.headers['Cache-Control'] = 'no-cache'
+    return resp

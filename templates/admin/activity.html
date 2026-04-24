@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% block title %}Execution Activity{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12 d-flex justify-content-between align-items-center">
+        <div>
+            <h3 class="fw-bold"><i class="bi bi-activity me-2 text-info"></i>Execution Activity</h3>
+            <p class="text-muted mb-0">Live and historical view of module executions.</p>
+        </div>
+        <div class="d-flex gap-2">
+            <button class="btn btn-outline-info" onclick="location.reload()">
+                <i class="bi bi-arrow-clockwise me-1"></i> Refresh
+            </button>
+            <a href="{{ url_for('admin.dashboard') }}" class="btn btn-outline-secondary">Back</a>
+        </div>
+    </div>
+</div>
+
+<!-- Summary badges -->
+{% set running = logs | selectattr('status', 'equalto', 'running') | list %}
+{% set success = logs | selectattr('status', 'equalto', 'success') | list %}
+{% set errors  = logs | selectattr('status', 'equalto', 'error')   | list %}
+<div class="row g-3 mb-4">
+    <div class="col-md-4">
+        <div class="card border-0 shadow-sm text-center py-2">
+            <div class="card-body">
+                <div class="display-6 fw-bold text-warning">{{ running|length }}</div>
+                <div class="text-muted small">Currently Running</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card border-0 shadow-sm text-center py-2">
+            <div class="card-body">
+                <div class="display-6 fw-bold text-success">{{ success|length }}</div>
+                <div class="text-muted small">Completed Successfully</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card border-0 shadow-sm text-center py-2">
+            <div class="card-body">
+                <div class="display-6 fw-bold text-danger">{{ errors|length }}</div>
+                <div class="text-muted small">Failed / Errors</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Auto-refresh toggle -->
+<div class="d-flex justify-content-end mb-2 align-items-center gap-2">
+    <span class="text-muted small" id="refresh-label">Auto-refresh: Off</span>
+    <div class="form-check form-switch mb-0">
+        <input class="form-check-input" type="checkbox" id="autoRefreshToggle" role="switch">
+    </div>
+</div>
+
+<div class="card shadow-sm border-0">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th style="width:60px">#</th>
+                        <th>Status</th>
+                        <th>Module</th>
+                        <th>User</th>
+                        <th>Started</th>
+                        <th>Finished</th>
+                        <th>Duration</th>
+                        <th>Message</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for log in logs %}
+                    <tr class="{% if log.status == 'running' %}table-warning{% elif log.status == 'error' %}table-danger{% endif %}">
+                        <td class="text-muted small">{{ log.id }}</td>
+                        <td>
+                            {% if log.status == 'running' %}
+                            <span class="badge bg-warning text-dark">
+                                <i class="bi bi-arrow-repeat me-1 spin"></i>Running
+                            </span>
+                            {% elif log.status == 'success' %}
+                            <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Success</span>
+                            {% elif log.status == 'error' %}
+                            <span class="badge bg-danger"><i class="bi bi-x-circle me-1"></i>Error</span>
+                            {% else %}
+                            <span class="badge bg-secondary">{{ log.status }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="fw-semibold">{{ log.module.name if log.module else '—' }}</td>
+                        <td class="text-muted small">{{ log.user.email if log.user else '—' }}</td>
+                        <td class="small text-nowrap">
+                            {{ log.timestamp.strftime('%Y-%m-%d %H:%M:%S') if log.timestamp else '—' }}
+                        </td>
+                        <td class="small text-nowrap">
+                            {% if log.end_time %}
+                                {{ log.end_time.strftime('%Y-%m-%d %H:%M:%S') }}
+                            {% elif log.status == 'running' %}
+                                <span class="text-warning fst-italic">In progress…</span>
+                            {% else %}
+                                —
+                            {% endif %}
+                        </td>
+                        <td class="small">
+                            {% if log.end_time and log.timestamp %}
+                                {% set delta = (log.end_time - log.timestamp).total_seconds() | int %}
+                                {% if delta >= 3600 %}
+                                    {{ (delta // 3600) }}h {{ (delta % 3600 // 60) }}m {{ (delta % 60) }}s
+                                {% elif delta >= 60 %}
+                                    {{ delta // 60 }}m {{ delta % 60 }}s
+                                {% else %}
+                                    {{ delta }}s
+                                {% endif %}
+                            {% elif log.status == 'running' %}
+                                <span class="text-warning fst-italic">—</span>
+                            {% else %}
+                                —
+                            {% endif %}
+                        </td>
+                        <td class="small text-muted">{{ log.message or '—' }}</td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="8" class="text-center py-5 text-muted">
+                            <i class="bi bi-inbox display-4 d-block mb-2"></i>
+                            No execution history yet.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<style>
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spin { display: inline-block; animation: spin 1s linear infinite; }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let refreshInterval = null;
+    const toggle = document.getElementById('autoRefreshToggle');
+    const label  = document.getElementById('refresh-label');
+
+    toggle.addEventListener('change', function () {
+        if (this.checked) {
+            label.textContent = 'Auto-refresh: 10s';
+            refreshInterval = setInterval(() => location.reload(), 10000);
+        } else {
+            label.textContent = 'Auto-refresh: Off';
+            clearInterval(refreshInterval);
+        }
+    });
+</script>
+{% endblock %}
