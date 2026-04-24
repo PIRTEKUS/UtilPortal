@@ -268,6 +268,19 @@ def get_module_files(module_id):
                     files.append(rel_file.replace('\\', '/'))
     return jsonify({'files': files})
 
+@bp.route('/modules/<int:module_id>/rebuild-env', methods=['POST'])
+@login_required
+@admin_required
+def rebuild_module_env(module_id):
+    """Delete the module's isolated venv so it gets recreated cleanly on next execution."""
+    venv_dir = os.path.join('instance', 'modules_data', str(module_id), 'venv')
+    if os.path.exists(venv_dir):
+        shutil.rmtree(venv_dir)
+        flash(f'Virtual environment for module {module_id} has been cleared. It will be rebuilt on the next run.', 'success')
+    else:
+        flash(f'No virtual environment found for module {module_id} — nothing to clear.', 'info')
+    return redirect(request.referrer or url_for('admin.modules'))
+
 # --- USERS ---
 @bp.route('/users')
 @login_required

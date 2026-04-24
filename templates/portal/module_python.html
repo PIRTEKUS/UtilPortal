@@ -8,7 +8,15 @@
             <h3 class="fw-bold"><i class="fab fa-python me-2 text-warning"></i>{{ module.name }}</h3>
             <p class="text-muted mb-0">{{ module.description }}</p>
         </div>
-        <div>
+        <div class="d-flex gap-2">
+            {% if current_user.is_admin() and module.is_python_folder %}
+            <form action="{{ url_for('admin.rebuild_module_env', module_id=module.id) }}" method="post"
+                  onsubmit="return confirm('This will delete the virtual environment for this module and rebuild it fresh on next run. Continue?');">
+                <button type="submit" class="btn btn-outline-warning btn-sm" title="Clear and rebuild the Python virtual environment for this module">
+                    <i class="fas fa-recycle me-1"></i> Rebuild Env
+                </button>
+            </form>
+            {% endif %}
             <a href="{{ url_for('portal.dashboard') }}" class="btn btn-outline-secondary">Back to Dashboard</a>
         </div>
     </div>
