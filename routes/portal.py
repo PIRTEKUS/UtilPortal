@@ -231,6 +231,8 @@ def execute_python_stream(module_id):
     def generate():
         import tempfile
         import shutil
+        import threading
+        import queue as _queue
         
         script_to_run = ""
         cwd = os.getcwd()
@@ -317,32 +319,56 @@ def execute_python_stream(module_id):
                 yield f"data: [Setup] Environment ready.\n\n"
             
             python_executable = venv_python
-            
+
             yield f"data: Starting execution of module: {module.name}...\n\n"
-            
+
             process = subprocess.Popen(
-                [python_executable, "-u", script_to_run], 
+                [python_executable, "-u", script_to_run],
                 cwd=cwd,
-                stdout=subprocess.PIPE, 
-                stderr=subprocess.STDOUT, 
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
                 text=True,
                 bufsize=1
             )
-            
-            for line in iter(process.stdout.readline, ''):
-                yield f"data: {line}\n\n"
-                
-            process.stdout.close()
-            process.wait()
-            
-            yield f"data: \n\n"
-            yield f"data: Process exited with code {process.returncode}\n\n"
-            
+
+            # Use a queue + background thread so we can send SSE keepalive
+            # pings while waiting for output, preventing nginx from timing out
+            # on long-running modules that go quiet between operations.
+            out_queue = _queue.Queue()
+
+            def _reader():
+                try:
+                    for line in iter(process.stdout.readline, ''):
+                        out_queue.put(('data', line))
+                    process.stdout.close()
+                    process.wait()
+                    out_queue.put(('done', process.returncode))
+                except Exception as exc:
+                    out_queue.put(('error', str(exc)))
+
+            reader_thread = threading.Thread(target=_reader, daemon=True)
+            reader_thread.start()
+
+            while True:
+                try:
+                    kind, payload = out_queue.get(timeout=15)
+                    if kind == 'data':
+                        yield f"data: {payload}\n\n"
+                    elif kind == 'done':
+                        yield f"data: \n\n"
+                        yield f"data: Process exited with code {payload}\n\n"
+                        break
+                    elif kind == 'error':
+                        yield f"data: ERROR: {payload}\n\n"
+                        break
+                except _queue.Empty:
+                    # No output for 15s — send an SSE comment to keep nginx alive
+                    yield ": keepalive\n\n"
+
         except Exception as e:
             yield f"data: Execution Failed: {str(e)}\n\n"
         finally:
             if not module.is_python_folder and module.custom_code and os.path.exists(cwd):
-                # Clean up temp directory for direct code modules
                 shutil.rmtree(cwd, ignore_errors=True)
-                
+
     return Response(stream_with_context(generate()), mimetype='text/event-stream')

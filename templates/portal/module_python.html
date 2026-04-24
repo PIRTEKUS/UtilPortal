@@ -68,7 +68,7 @@
     const baseStreamUrl = "{{ url_for('portal.execute_python_stream', module_id=module.id) }}";
     const isPythonFolder = {{ 'true' if module.is_python_folder else 'false' }};
 
-    document.getElementById('start-btn').addEventListener('click', function () {
+    document.getElementById('start-btn').addEventListener('click', async function () {
         const btn = this;
         const output = document.getElementById('console-output');
         const statusBadge = document.getElementById('status-badge');
@@ -78,45 +78,62 @@
         btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Running...';
         statusBadge.className = 'badge bg-warning text-dark';
         statusBadge.textContent = 'Running';
+        output.textContent = '';
 
-        output.textContent = ''; // Clear previous output
-
-        // Build the SSE URL — attach chosen entry file if applicable
         let streamUrl = baseStreamUrl;
         if (isPythonFolder && fileSelect) {
-            const chosen = encodeURIComponent(fileSelect.value);
-            streamUrl += '?entry_file=' + chosen;
+            streamUrl += '?entry_file=' + encodeURIComponent(fileSelect.value);
         }
 
-        const eventSource = new EventSource(streamUrl);
+        try {
+            // Use fetch + ReadableStream instead of EventSource so it never
+            // auto-reconnects (which would start a duplicate execution).
+            const response = await fetch(streamUrl);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
-        eventSource.onmessage = function (event) {
-            output.textContent += event.data + '\n';
-            output.scrollTop = output.scrollHeight; // Auto-scroll
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
 
-            if (event.data.includes('Process exited with code')) {
-                eventSource.close();
-                btn.disabled = false;
-                btn.innerHTML = '<i class="fas fa-play me-2"></i>Run Again';
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
 
-                if (event.data.includes('code 0')) {
-                    statusBadge.className = 'badge bg-success';
-                    statusBadge.textContent = 'Completed';
-                } else {
-                    statusBadge.className = 'badge bg-danger';
-                    statusBadge.textContent = 'Failed';
+                buffer += decoder.decode(value, { stream: true });
+                const parts = buffer.split('\n\n');
+                buffer = parts.pop(); // keep incomplete chunk
+
+                for (const part of parts) {
+                    for (const line of part.split('\n')) {
+                        if (line.startsWith('data: ')) {
+                            const text = line.slice(6);
+                            if (text.trim()) {
+                                output.textContent += text + '\n';
+                                output.scrollTop = output.scrollHeight;
+
+                                if (text.includes('Process exited with code')) {
+                                    if (text.includes('code 0')) {
+                                        statusBadge.className = 'badge bg-success';
+                                        statusBadge.textContent = 'Completed';
+                                    } else {
+                                        statusBadge.className = 'badge bg-danger';
+                                        statusBadge.textContent = 'Failed';
+                                    }
+                                }
+                            }
+                        }
+                        // Lines starting with ':' are SSE keepalive comments — ignore them
+                    }
                 }
             }
-        };
-
-        eventSource.onerror = function () {
-            eventSource.close();
-            btn.disabled = false;
-            btn.innerHTML = '<i class="fas fa-play me-2"></i>Run Again';
+        } catch (err) {
+            output.textContent += '\n[System] Connection error: ' + err.message + '\n';
             statusBadge.className = 'badge bg-danger';
             statusBadge.textContent = 'Connection Error';
-            output.textContent += '\n\n[System] Connection to server lost.\n';
-        };
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-play me-2"></i>Run Again';
+        }
     });
 </script>
 {% endblock %}
