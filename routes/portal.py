@@ -270,37 +270,51 @@ def execute_python_stream(module_id):
                 req_file = os.path.join(cwd, 'requirements.txt')
                 if not os.path.exists(req_file):
                     yield f"data: [Setup] No requirements.txt found. Scanning imports to generate one...\n\n"
-                    # Try pipreqs via its console_scripts entry point first, fallback to -m
+
+                    # Step 1: Install pipreqs into the module venv first
+                    subprocess.run(
+                        [venv_pip, "install", "--no-cache-dir", "--quiet", "pipreqs"],
+                        cwd=cwd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                    )
+
+                    # Step 2: Now use the venv's pipreqs binary (it now exists)
                     pipreqs_bin = os.path.join(venv_dir,
                         'Scripts' if os.name == 'nt' else 'bin', 'pipreqs')
-                    pipreqs_cmd = [pipreqs_bin, "--force", "--ignore", "venv", "."] \
-                        if os.path.exists(pipreqs_bin) \
-                        else [sys.executable, "-m", "pipreqs", "--force", "--ignore", "venv", "."]
 
-                    # First install pipreqs into the venv so we can use it
-                    subprocess.run([venv_pip, "install", "pipreqs"], cwd=cwd,
-                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-                    req_proc = subprocess.Popen(pipreqs_cmd, cwd=cwd,
-                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
-                    for line in iter(req_proc.stdout.readline, ''):
-                        yield f"data: [pipreqs] {line.strip()}\n\n"
-                    req_proc.wait()
+                    if os.path.exists(pipreqs_bin):
+                        req_proc = subprocess.Popen(
+                            [pipreqs_bin, "--force", "--ignore", "venv", "."],
+                            cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            text=True, bufsize=1
+                        )
+                        for line in iter(req_proc.stdout.readline, ''):
+                            stripped = line.strip()
+                            if stripped:
+                                yield f"data: [pipreqs] {stripped}\n\n"
+                        req_proc.wait()
+                    else:
+                        yield f"data: [Setup] pipreqs binary not found after install, skipping auto-generation.\n\n"
 
                     if os.path.exists(req_file):
                         yield f"data: [Setup] requirements.txt generated successfully.\n\n"
                     else:
-                        yield f"data: [Setup] WARNING: Could not auto-generate requirements.txt. Creating an empty one.\n\n"
+                        yield f"data: [Setup] WARNING: Could not auto-generate requirements.txt. Continuing without dependencies.\n\n"
+                        # Create empty file so pip install step is still skipped cleanly
                         open(req_file, 'w').close()
 
-                if os.path.exists(req_file):
+                if os.path.exists(req_file) and os.path.getsize(req_file) > 0:
                     yield f"data: [Setup] Installing dependencies...\n\n"
-                    pip_proc = subprocess.Popen([venv_pip, "install", "-r", "requirements.txt"],
-                        cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+                    pip_proc = subprocess.Popen(
+                        [venv_pip, "install", "--no-cache-dir", "-r", "requirements.txt"],
+                        cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                        text=True, bufsize=1
+                    )
                     for line in iter(pip_proc.stdout.readline, ''):
-                        yield f"data: [pip] {line.strip()}\n\n"
+                        stripped = line.strip()
+                        if stripped:
+                            yield f"data: [pip] {stripped}\n\n"
                     pip_proc.wait()
-                    yield f"data: [Setup] Environment ready.\n\n"
+                yield f"data: [Setup] Environment ready.\n\n"
             
             python_executable = venv_python
             
