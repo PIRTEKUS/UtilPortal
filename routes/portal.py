@@ -84,7 +84,23 @@ def execute(module_id):
         
     # Python Module
     if module.custom_code or module.is_python_folder:
-        return render_template('portal/module_python.html', module=module)
+        py_files = []
+        if module.is_python_folder:
+            module_dir = os.path.join(os.getcwd(), 'instance', 'modules_data', str(module.id))
+            if os.path.exists(module_dir):
+                for root, _, filenames in os.walk(module_dir):
+                    for fname in sorted(filenames):
+                        if fname.endswith('.py'):
+                            rel = os.path.relpath(os.path.join(root, fname), module_dir).replace('\\', '/')
+                            # Skip files inside the venv subfolder
+                            if not rel.startswith('venv/'):
+                                py_files.append(rel)
+            # Put the configured entry file first
+            entry = module.python_entry_file or 'main.py'
+            if entry in py_files:
+                py_files.remove(entry)
+            py_files.insert(0, entry)
+        return render_template('portal/module_python.html', module=module, py_files=py_files)
         
     # Standard Module (Generic parameter form to Stored Procedure)
     try:
@@ -223,10 +239,13 @@ def execute_python_stream(module_id):
         try:
             if module.is_python_folder:
                 cwd = os.path.join(os.getcwd(), 'instance', 'modules_data', str(module.id))
-                entry_file = module.python_entry_file or 'main.py'
+                # Allow the user to choose a different entry file via query param
+                entry_file = request.args.get('entry_file') or module.python_entry_file or 'main.py'
+                # Security: strip any path traversal attempts
+                entry_file = entry_file.replace('..', '').lstrip('/')
                 script_to_run = os.path.join(cwd, entry_file)
                 if not os.path.exists(script_to_run):
-                    yield f"data: ERROR: Entry file {entry_file} not found in uploaded zip.\n\n"
+                    yield f"data: ERROR: Entry file '{entry_file}' not found in uploaded zip.\n\n"
                     return
             elif module.custom_code:
                 # Direct code: create a temporary directory to act as the module folder

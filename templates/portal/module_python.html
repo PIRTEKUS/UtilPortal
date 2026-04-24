@@ -22,43 +22,75 @@
                 <span id="status-badge" class="badge bg-secondary">Waiting to start...</span>
             </div>
             <div class="card-body p-0 bg-dark">
-                <pre id="console-output" class="text-success p-3 m-0" style="height: 400px; overflow-y: auto; background-color: #1e1e1e; font-family: 'Consolas', 'Courier New', monospace; font-size: 14px;"></pre>
+                <pre id="console-output" class="text-success p-3 m-0"
+                    style="height: 400px; overflow-y: auto; background-color: #1e1e1e; font-family: 'Consolas', 'Courier New', monospace; font-size: 14px;"></pre>
             </div>
-            <div class="card-footer bg-light text-end">
-                <button id="start-btn" class="btn btn-primary px-4"><i class="fas fa-play me-2"></i>Execute</button>
+            <div class="card-footer bg-light">
+                <div class="d-flex align-items-center gap-3 flex-wrap">
+
+                    {% if module.is_python_folder and py_files %}
+                    <div class="flex-grow-1">
+                        <label class="form-label small fw-semibold mb-1 text-muted">
+                            <i class="fas fa-file-code me-1"></i>Entry File to Run
+                        </label>
+                        <select id="entry-file-select" class="form-select form-select-sm font-monospace">
+                            {% for f in py_files %}
+                            <option value="{{ f }}" {% if loop.first %}selected{% endif %}>
+                                {{ f }}{% if loop.first %} ★ (default){% endif %}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    {% endif %}
+
+                    <div class="{% if module.is_python_folder and py_files %}ms-auto{% else %}ms-auto{% endif %}">
+                        <button id="start-btn" class="btn btn-primary px-4">
+                            <i class="fas fa-play me-2"></i>Execute
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 </div>
-
 {% endblock %}
 
 {% block scripts %}
 <script>
-    document.getElementById('start-btn').addEventListener('click', function() {
+    const baseStreamUrl = "{{ url_for('portal.execute_python_stream', module_id=module.id) }}";
+    const isPythonFolder = {{ 'true' if module.is_python_folder else 'false' }};
+
+    document.getElementById('start-btn').addEventListener('click', function () {
         const btn = this;
         const output = document.getElementById('console-output');
         const statusBadge = document.getElementById('status-badge');
-        
+        const fileSelect = document.getElementById('entry-file-select');
+
         btn.disabled = true;
         btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Running...';
         statusBadge.className = 'badge bg-warning text-dark';
         statusBadge.textContent = 'Running';
-        
+
         output.textContent = ''; // Clear previous output
-        
-        // Use Server-Sent Events to capture streaming output
-        const eventSource = new EventSource("{{ url_for('portal.execute_python_stream', module_id=module.id) }}");
-        
-        eventSource.onmessage = function(event) {
+
+        // Build the SSE URL — attach chosen entry file if applicable
+        let streamUrl = baseStreamUrl;
+        if (isPythonFolder && fileSelect) {
+            const chosen = encodeURIComponent(fileSelect.value);
+            streamUrl += '?entry_file=' + chosen;
+        }
+
+        const eventSource = new EventSource(streamUrl);
+
+        eventSource.onmessage = function (event) {
             output.textContent += event.data + '\n';
             output.scrollTop = output.scrollHeight; // Auto-scroll
-            
+
             if (event.data.includes('Process exited with code')) {
                 eventSource.close();
                 btn.disabled = false;
                 btn.innerHTML = '<i class="fas fa-play me-2"></i>Run Again';
-                
+
                 if (event.data.includes('code 0')) {
                     statusBadge.className = 'badge bg-success';
                     statusBadge.textContent = 'Completed';
@@ -68,8 +100,8 @@
                 }
             }
         };
-        
-        eventSource.onerror = function(err) {
+
+        eventSource.onerror = function () {
             eventSource.close();
             btn.disabled = false;
             btn.innerHTML = '<i class="fas fa-play me-2"></i>Run Again';
