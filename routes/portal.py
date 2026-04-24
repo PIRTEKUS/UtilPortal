@@ -1,40 +1,92 @@
-from flask import Blueprint, render_template, abort, request, flash, redirect, url_for
-from flask_login import login_required, current_user
 import json
-from models import Module, AuditLog, ServerConnection, db
+import os
+import sys
+import subprocess
+from flask import Blueprint, render_template, abort, request, flash, redirect, url_for, Response, stream_with_context
+from flask_login import login_required, current_user
+from models import Module, AuditLog, ServerConnection, Folder, db
 import pyodbc
-from urllib.parse import urlsplit
 
 bp = Blueprint('portal', __name__)
+
+def get_user_allowed_modules(user):
+    if user.is_admin():
+        return Module.query.all()
+    
+    # Collect all modules the user has access to
+    allowed_modules = set()
+    
+    # 1. Direct module assignments
+    for m in user.modules:
+        allowed_modules.add(m)
+        
+    # 2. Modules from direct folder assignments
+    for f in user.folders:
+        for m in f.modules:
+            allowed_modules.add(m)
+            
+    # 3. Modules from role assignments (direct to role)
+    for r in user.roles:
+        for m in r.modules:
+            allowed_modules.add(m)
+            
+    # 4. Modules from folder assignments via roles
+    for r in user.roles:
+        for f in r.folders:
+            for m in f.modules:
+                allowed_modules.add(m)
+                
+    return list(allowed_modules)
+
+def build_tree(modules):
+    # Returns a list of root folders (with nested structure) and root modules
+    folders_map = {f.id: f for f in Folder.query.all()}
+    
+    tree_folders = {}
+    root_folders = []
+    root_modules = []
+    
+    # We only include folders that contain an allowed module
+    allowed_folder_ids = set()
+    for m in modules:
+        if m.folder_id:
+            curr = m.folder_id
+            while curr:
+                allowed_folder_ids.add(curr)
+                f = folders_map.get(curr)
+                curr = f.parent_id if f else None
+        else:
+            root_modules.append(m)
+            
+    # Reconstruct folder tree only for allowed folders
+    # Wait, simpler logic: just pass the allowed_modules and let Jinja group them by folder.
+    pass
 
 @bp.route('/dashboard')
 @login_required
 def dashboard():
-    # User can only see modules they are assigned to
-    # Admins can see everything (we can add a switch, or just let them manage via admin)
-    if current_user.is_admin():
-        modules = Module.query.all()
-    else:
-        modules = current_user.modules
-        
-    return render_template('portal/dashboard.html', modules=modules)
+    modules = get_user_allowed_modules(current_user)
+    
+    # For a simple tree diagram in the template, we can pass all folders
+    # and in the template filter modules to only show allowed ones.
+    all_folders = Folder.query.all()
+    
+    return render_template('portal/dashboard.html', modules=modules, folders=all_folders, allowed_module_ids=[m.id for m in modules])
 
 @bp.route('/execute/<int:module_id>', methods=['GET', 'POST'])
 @login_required
 def execute(module_id):
     module = Module.query.get_or_404(module_id)
     
-    # Ensure they have permission to this module
-    if not current_user.is_admin() and module not in current_user.modules:
+    allowed_modules = get_user_allowed_modules(current_user)
+    if module not in allowed_modules:
         abort(403)
         
-    # If the module has a custom python script, we would dynamically load it here.
-    if module.custom_script_path:
-        # Placeholder for dynamic module loading
-        return f"WIP: Custom module {module.custom_script_path} logic not yet implemented."
+    # Python Module
+    if module.custom_code or module.is_python_folder:
+        return render_template('portal/module_python.html', module=module)
         
     # Standard Module (Generic parameter form to Stored Procedure)
-    # Parse parameter definitions from JSON stored on the module
     try:
         parameters = json.loads(module.parameters_json) if module.parameters_json else []
     except json.JSONDecodeError:
@@ -42,7 +94,6 @@ def execute(module_id):
         
     connection_model = ServerConnection.query.get(module.connection_id) if getattr(module, 'connection_id', None) else None
     
-    # Dynamic Parameter Fetching for SQL Server SPs
     if not parameters and module.object_type == 'sp' and connection_model and connection_model.server_type == 'sqlserver':
         try:
             conn_str = f"DRIVER={{ODBC Driver 18 for SQL Server}};SERVER={connection_model.host};UID={connection_model.username};PWD={connection_model.password};Encrypt=Optional;TrustServerCertificate=yes;"
@@ -84,9 +135,6 @@ def execute(module_id):
             flash(f"Warning: Could not fetch parameters dynamically from SP: {str(e)}", "warning")
             
     if request.method == 'POST':
-        from sqlalchemy import text, create_engine
-        
-        # Collect parameters submitted by user
         submitted_params = {}
         for param in parameters:
             p_name = param.get('name')
@@ -96,24 +144,18 @@ def execute(module_id):
             
         try:
             if connection_model and connection_model.server_type == 'sqlserver':
-                # Use ODBC Driver 18 for SQL Server with Encrypt=Optional
                 conn_str = f"DRIVER={{ODBC Driver 18 for SQL Server}};SERVER={connection_model.host};UID={connection_model.username};PWD={connection_model.password};Encrypt=Optional;TrustServerCertificate=yes;"
                 if module.database_name:
                     conn_str += f";DATABASE={module.database_name}"
                     
-                # We need autocommit=True for some system stored procedures
                 odbc_conn = pyodbc.connect(conn_str, autocommit=True)
                 cursor = odbc_conn.cursor()
                 
                 if module.object_type == 'job':
-                    # Execute SQL Server Agent Job using msdb database
                     job_name = module.stored_proc_name
                     cursor.execute(f"EXEC msdb.dbo.sp_start_job N'{job_name}'")
                     flash(f'SQL Server Job "{job_name}" has been requested to start.', 'success')
                 else:
-                    # Execute Stored Procedure via pyodbc
-                    # Extract parameter values in order or by name depending on setup. 
-                    # For simplicity, passing them logically if there are any.
                     if parameters:
                         params_list = [submitted_params.get(p['name']) for p in parameters]
                         placeholders = ",".join(["?" for _ in params_list])
@@ -137,33 +179,6 @@ def execute(module_id):
                 cursor.close()
                 odbc_conn.close()
                 
-            else:
-                # --- MYSQL / DEFAULT ROUTING (Legacy Support) ---
-                if getattr(module, 'target_connection', None):
-                    # Use custom connection string if provided
-                    engine = create_engine(module.target_connection)
-                    connection = engine.connect()
-                else:
-                    # Use default portal connection (db.engine)
-                    connection = db.engine.connect()
-                    
-                bind_placeholders = ", ".join([f":{k}" for k in submitted_params.keys()])
-                call_stmt = text(f"CALL {module.stored_proc_name}({bind_placeholders})")
-                
-                with connection.begin():
-                    # For legacy routing we only capture the first result set for simplicity
-                    result = connection.execute(call_stmt, submitted_params)
-                    if result.returns_rows:
-                        columns = result.keys()
-                        rows = result.fetchall()
-                        result_sets.append({
-                            'columns': columns,
-                            'rows': [dict(zip(columns, row)) for row in rows]
-                        })
-                connection.close()
-                flash(f'Module {module.name} executed successfully!', 'success')
-            
-            # Log success
             log_msg = 'Executed successfully.'
             if result_sets:
                 log_msg += f' Returned {len(result_sets)} result set(s).'
@@ -177,15 +192,71 @@ def execute(module_id):
                 return render_template('portal/module_results.html', module=module, result_sets=result_sets)
             
         except Exception as e:
-            # Log error
             error_msg = str(e)
             log = AuditLog(user_id=current_user.id, module_id=module.id, 
                            parameters_used=json.dumps(submitted_params), status='error', message=error_msg)
             db.session.add(log)
             db.session.commit()
-            
             flash(f'Error executing module: {error_msg}', 'danger')
             
         return redirect(url_for('portal.dashboard'))
         
     return render_template('portal/module_generic.html', module=module, parameters=parameters)
+
+@bp.route('/execute/python/stream/<int:module_id>')
+@login_required
+def execute_python_stream(module_id):
+    module = Module.query.get_or_404(module_id)
+    
+    allowed_modules = get_user_allowed_modules(current_user)
+    if module not in allowed_modules:
+        abort(403)
+
+    def generate():
+        import tempfile
+        
+        script_to_run = ""
+        cwd = os.getcwd()
+        
+        try:
+            if module.is_python_folder:
+                cwd = os.path.join(os.getcwd(), 'instance', 'modules_data', str(module.id))
+                entry_file = module.python_entry_file or 'main.py'
+                script_to_run = os.path.join(cwd, entry_file)
+                if not os.path.exists(script_to_run):
+                    yield f"data: ERROR: Entry file {entry_file} not found in uploaded zip.\n\n"
+                    return
+            elif module.custom_code:
+                # Write direct code to a temp file
+                fd, path = tempfile.mkstemp(suffix=".py")
+                with os.fdopen(fd, 'w') as f:
+                    f.write(module.custom_code.replace('\r\n', '\n'))
+                script_to_run = path
+            
+            yield f"data: Starting execution of module: {module.name}...\n\n"
+            
+            process = subprocess.Popen(
+                [sys.executable, "-u", script_to_run], 
+                cwd=cwd,
+                stdout=subprocess.PIPE, 
+                stderr=subprocess.STDOUT, 
+                text=True,
+                bufsize=1
+            )
+            
+            for line in iter(process.stdout.readline, ''):
+                yield f"data: {line}\n\n"
+                
+            process.stdout.close()
+            process.wait()
+            
+            yield f"data: \n\n"
+            yield f"data: Process exited with code {process.returncode}\n\n"
+            
+        except Exception as e:
+            yield f"data: Execution Failed: {str(e)}\n\n"
+        finally:
+            if not module.is_python_folder and module.custom_code and os.path.exists(script_to_run):
+                os.remove(script_to_run)
+                
+    return Response(stream_with_context(generate()), mimetype='text/event-stream')

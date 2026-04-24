@@ -18,7 +18,11 @@
     <nav class="navbar navbar-expand-lg navbar-light bg-white border-bottom border-secondary mb-4">
         <div class="container-fluid">
             <a class="navbar-brand fw-bold" href="{{ url_for('auth.login') }}">
+                {% if app_logo %}
+                <img src="{{ url_for('static', filename='uploads/' + app_logo) }}" alt="Company Logo">
+                {% else %}
                 <img src="https://www.pirtekusa.com/wp-content/uploads/2019/11/PIRTEK_Logo.svg" alt="PIRTEK Logo">
+                {% endif %}
             </a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav"
                 aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">

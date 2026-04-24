@@ -1,12 +1,15 @@
-from flask import Blueprint, render_template, redirect, url_for, flash, request, jsonify
+import os
+import zipfile
+import shutil
+from flask import Blueprint, render_template, redirect, url_for, flash, request, jsonify, current_app
 from flask_login import login_required, current_user
-from models import User, Module, ServerConnection, db
+from werkzeug.utils import secure_filename
+from models import User, Module, ServerConnection, db, Role, Folder, AppSetting
 from functools import wraps
 import pyodbc
 
 bp = Blueprint('admin', __name__)
 
-# Custom decorator to ensure only admins access these routes
 def admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -28,23 +31,18 @@ def dashboard():
                          modules_count=modules_count,
                          connections_count=connections_count)
 
+# --- CONNECTIONS ---
 @bp.route('/connections')
 @login_required
 @admin_required
 def connections():
-    all_connections = ServerConnection.query.all()
-    return render_template('admin/connections.html', connections=all_connections)
+    return render_template('admin/connections.html', connections=ServerConnection.query.all())
 
 @bp.route('/connections/create', methods=['POST'])
 @login_required
 @admin_required
 def create_connection():
     name = request.form.get('name')
-    server_type = request.form.get('server_type')
-    host = request.form.get('host')
-    username = request.form.get('username')
-    password = request.form.get('password')
-    
     existing = ServerConnection.query.filter_by(name=name).first()
     if existing:
         flash(f'A connection with the name "{name}" already exists.', 'danger')
@@ -52,10 +50,10 @@ def create_connection():
         
     new_conn = ServerConnection(
         name=name, 
-        server_type=server_type, 
-        host=host, 
-        username=username, 
-        password=password
+        server_type=request.form.get('server_type'), 
+        host=request.form.get('host'), 
+        username=request.form.get('username'), 
+        password=request.form.get('password')
     )
     db.session.add(new_conn)
     db.session.commit()
@@ -69,9 +67,7 @@ def get_databases(conn_id):
     conn = ServerConnection.query.get_or_404(conn_id)
     if conn.server_type != 'sqlserver':
         return jsonify({'error': 'Only SQL Server supports dynamic DB fetching right now'}), 400
-        
     try:
-        # Use ODBC Driver 18 for SQL Server with Encrypt=no to bypass forced TLS handshakes on older servers
         conn_str = f"DRIVER={{ODBC Driver 18 for SQL Server}};SERVER={conn.host};UID={conn.username};PWD={conn.password};Encrypt=no;TrustServerCertificate=no;"
         odbc_conn = pyodbc.connect(conn_str, autocommit=True)
         cursor = odbc_conn.cursor()
@@ -83,37 +79,130 @@ def get_databases(conn_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+# --- ROLES ---
+@bp.route('/roles', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def roles():
+    if request.method == 'POST':
+        name = request.form.get('name')
+        desc = request.form.get('description')
+        if not Role.query.filter_by(name=name).first():
+            db.session.add(Role(name=name, description=desc))
+            db.session.commit()
+            flash('Role created successfully.', 'success')
+        else:
+            flash('Role already exists.', 'danger')
+        return redirect(url_for('admin.roles'))
+        
+    all_roles = Role.query.all()
+    all_modules = Module.query.all()
+    all_folders = Folder.query.all()
+    return render_template('admin/roles.html', roles=all_roles, modules=all_modules, folders=all_folders)
+
+@bp.route('/roles/edit/<int:role_id>', methods=['POST'])
+@login_required
+@admin_required
+def edit_role(role_id):
+    role = Role.query.get_or_404(role_id)
+    role.name = request.form.get('name')
+    role.description = request.form.get('description')
+    
+    role.modules.clear()
+    for m_id in request.form.getlist('module_ids'):
+        m = Module.query.get(int(m_id))
+        if m: role.modules.append(m)
+        
+    role.folders.clear()
+    for f_id in request.form.getlist('folder_ids'):
+        f = Folder.query.get(int(f_id))
+        if f: role.folders.append(f)
+        
+    db.session.commit()
+    flash(f'Role "{role.name}" updated.', 'success')
+    return redirect(url_for('admin.roles'))
+
+# --- FOLDERS ---
+@bp.route('/folders', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def folders():
+    if request.method == 'POST':
+        name = request.form.get('name')
+        parent_id = request.form.get('parent_id') or None
+        db.session.add(Folder(name=name, parent_id=parent_id))
+        db.session.commit()
+        flash('Folder created successfully.', 'success')
+        return redirect(url_for('admin.folders'))
+        
+    all_folders = Folder.query.all()
+    return render_template('admin/folders.html', folders=all_folders)
+
+@bp.route('/folders/edit/<int:folder_id>', methods=['POST'])
+@login_required
+@admin_required
+def edit_folder(folder_id):
+    folder = Folder.query.get_or_404(folder_id)
+    folder.name = request.form.get('name')
+    parent_id = request.form.get('parent_id')
+    folder.parent_id = parent_id if parent_id else None
+    db.session.commit()
+    flash(f'Folder "{folder.name}" updated.', 'success')
+    return redirect(url_for('admin.folders'))
+
+# --- MODULES ---
 @bp.route('/modules')
 @login_required
 @admin_required
 def modules():
     all_modules = Module.query.all()
     all_connections = ServerConnection.query.all()
-    return render_template('admin/modules.html', modules=all_modules, connections=all_connections)
+    all_folders = Folder.query.all()
+    return render_template('admin/modules.html', modules=all_modules, connections=all_connections, folders=all_folders)
 
 @bp.route('/modules/create', methods=['POST'])
 @login_required
 @admin_required
 def create_module():
-    name = request.form.get('name')
-    desc = request.form.get('description')
+    new_module = Module(
+        name=request.form.get('name'), 
+        description=request.form.get('description'),
+        folder_id=request.form.get('folder_id') or None
+    )
     mod_type = request.form.get('type')
     
-    new_module = Module(name=name, description=desc)
-    
     if mod_type == 'custom':
-        new_module.custom_script_path = request.form.get('custom_script_path')
+        new_module.custom_code = request.form.get('custom_code')
+        # Handle zip upload
+        if 'zip_file' in request.files and request.files['zip_file'].filename:
+            file = request.files['zip_file']
+            filename = secure_filename(file.filename)
+            zip_path = os.path.join('instance', filename)
+            file.save(zip_path)
+            new_module.is_python_folder = True
+            new_module.python_entry_file = request.form.get('python_entry_file') or 'main.py'
+            
+            db.session.add(new_module)
+            db.session.commit()
+            
+            # Extract
+            extract_dir = os.path.join('instance', 'modules_data', str(new_module.id))
+            os.makedirs(extract_dir, exist_ok=True)
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                zip_ref.extractall(extract_dir)
+            os.remove(zip_path)
+            flash(f'Module "{new_module.name}" created from ZIP successfully.', 'success')
+            return redirect(url_for('admin.modules'))
     else:
         new_module.connection_id = request.form.get('connection_id')
-        new_module.object_type = request.form.get('object_type') # 'sp' or 'job'
+        new_module.object_type = request.form.get('object_type')
         new_module.database_name = request.form.get('database_name')
         new_module.stored_proc_name = request.form.get('stored_proc_name')
         new_module.parameters_json = request.form.get('parameters_json')
         
     db.session.add(new_module)
     db.session.commit()
-    
-    flash(f'Module "{name}" created successfully.', 'success')
+    flash(f'Module "{new_module.name}" created successfully.', 'success')
     return redirect(url_for('admin.modules'))
 
 @bp.route('/modules/edit/<int:module_id>', methods=['POST'])
@@ -121,15 +210,29 @@ def create_module():
 @admin_required
 def edit_module(module_id):
     module = Module.query.get_or_404(module_id)
-    
     module.name = request.form.get('name')
     module.description = request.form.get('description')
+    module.folder_id = request.form.get('folder_id') or None
     mod_type = request.form.get('type')
     
     if mod_type == 'custom':
-        module.custom_script_path = request.form.get('custom_script_path')
-        
-        # Clear generic fields
+        module.custom_code = request.form.get('custom_code')
+        if 'zip_file' in request.files and request.files['zip_file'].filename:
+            file = request.files['zip_file']
+            filename = secure_filename(file.filename)
+            zip_path = os.path.join('instance', filename)
+            file.save(zip_path)
+            module.is_python_folder = True
+            module.python_entry_file = request.form.get('python_entry_file') or 'main.py'
+            
+            extract_dir = os.path.join('instance', 'modules_data', str(module.id))
+            if os.path.exists(extract_dir):
+                shutil.rmtree(extract_dir)
+            os.makedirs(extract_dir, exist_ok=True)
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                zip_ref.extractall(extract_dir)
+            os.remove(zip_path)
+            
         module.connection_id = None
         module.object_type = None
         module.database_name = None
@@ -141,23 +244,40 @@ def edit_module(module_id):
         module.database_name = request.form.get('database_name')
         module.stored_proc_name = request.form.get('stored_proc_name')
         module.parameters_json = request.form.get('parameters_json')
-        
-        # Clear custom fields
-        module.custom_script_path = None
+        module.custom_code = None
+        module.is_python_folder = False
         
     db.session.commit()
-    
     flash(f'Module "{module.name}" updated successfully.', 'success')
     return redirect(url_for('admin.modules'))
 
+@bp.route('/api/modules/<int:module_id>/files')
+@login_required
+@admin_required
+def get_module_files(module_id):
+    # Helps to select entry file after zip is uploaded, though usually they select it during upload.
+    # To properly support "select from dropdown" they'd have to upload first, then edit.
+    extract_dir = os.path.join('instance', 'modules_data', str(module_id))
+    files = []
+    if os.path.exists(extract_dir):
+        for root, _, filenames in os.walk(extract_dir):
+            for filename in filenames:
+                if filename.endswith('.py'):
+                    rel_dir = os.path.relpath(root, extract_dir)
+                    rel_file = filename if rel_dir == '.' else os.path.join(rel_dir, filename)
+                    files.append(rel_file.replace('\\', '/'))
+    return jsonify({'files': files})
 
+# --- USERS ---
 @bp.route('/users')
 @login_required
 @admin_required
 def users():
-    all_users = User.query.all()
-    all_modules = Module.query.all()
-    return render_template('admin/users.html', users=all_users, modules=all_modules)
+    return render_template('admin/users.html', 
+                         users=User.query.all(), 
+                         modules=Module.query.all(),
+                         roles=Role.query.all(),
+                         folders=Folder.query.all())
 
 @bp.route('/users/<int:user_id>/permissions', methods=['POST'])
 @login_required
@@ -168,14 +288,20 @@ def update_user_permissions(user_id):
         flash('Cannot modify permissions for an Admin user.', 'warning')
         return redirect(url_for('admin.users'))
         
-    module_ids = request.form.getlist('module_ids')
-    
-    # Clear existing permissions and rebuild
     user.modules.clear()
-    for m_id in module_ids:
-        module = Module.query.get(int(m_id))
-        if module:
-            user.modules.append(module)
+    for m_id in request.form.getlist('module_ids'):
+        m = Module.query.get(int(m_id))
+        if m: user.modules.append(m)
+            
+    user.roles.clear()
+    for r_id in request.form.getlist('role_ids'):
+        r = Role.query.get(int(r_id))
+        if r: user.roles.append(r)
+        
+    user.folders.clear()
+    for f_id in request.form.getlist('folder_ids'):
+        f = Folder.query.get(int(f_id))
+        if f: user.folders.append(f)
             
     db.session.commit()
     flash(f'Permissions updated for {user.email}.', 'success')
@@ -186,19 +312,40 @@ def update_user_permissions(user_id):
 @admin_required
 def toggle_user_admin(user_id):
     user = User.query.get_or_404(user_id)
-    
     if user.id == current_user.id:
         flash('You cannot revoke your own admin privileges.', 'danger')
         return redirect(url_for('admin.users'))
-        
     if user.is_admin():
         user.role = 'user'
         flash(f'Admin privileges revoked for {user.email}.', 'warning')
     else:
         user.role = 'admin'
-        # Clear specific module assignments as admins get access to all
         user.modules.clear()
+        user.roles.clear()
+        user.folders.clear()
         flash(f'User {user.email} promoted to Admin.', 'success')
-        
     db.session.commit()
     return redirect(url_for('admin.users'))
+
+# --- SETTINGS ---
+@bp.route('/settings', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def settings():
+    if request.method == 'POST':
+        if 'logo' in request.files and request.files['logo'].filename:
+            file = request.files['logo']
+            filename = secure_filename(file.filename)
+            file.save(os.path.join('static', 'uploads', filename))
+            
+            logo_setting = AppSetting.query.filter_by(key='company_logo').first()
+            if not logo_setting:
+                logo_setting = AppSetting(key='company_logo', value=filename)
+                db.session.add(logo_setting)
+            else:
+                logo_setting.value = filename
+            db.session.commit()
+            flash('Company logo updated successfully.', 'success')
+            
+    logo_setting = AppSetting.query.filter_by(key='company_logo').first()
+    return render_template('admin/settings.html', logo=logo_setting.value if logo_setting else None)

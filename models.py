@@ -5,11 +5,59 @@ from datetime import datetime, timezone
 
 db = SQLAlchemy()
 
-# Association table mapping users to the modules they have permission to execute
 user_modules = db.Table('user_modules',
     db.Column('user_id', db.Integer, db.ForeignKey('user.id'), primary_key=True),
     db.Column('module_id', db.Integer, db.ForeignKey('module.id'), primary_key=True)
 )
+
+user_roles = db.Table('user_roles',
+    db.Column('user_id', db.Integer, db.ForeignKey('user.id'), primary_key=True),
+    db.Column('role_id', db.Integer, db.ForeignKey('role.id'), primary_key=True)
+)
+
+user_folders = db.Table('user_folders',
+    db.Column('user_id', db.Integer, db.ForeignKey('user.id'), primary_key=True),
+    db.Column('folder_id', db.Integer, db.ForeignKey('folder.id'), primary_key=True)
+)
+
+role_modules = db.Table('role_modules',
+    db.Column('role_id', db.Integer, db.ForeignKey('role.id'), primary_key=True),
+    db.Column('module_id', db.Integer, db.ForeignKey('module.id'), primary_key=True)
+)
+
+role_folders = db.Table('role_folders',
+    db.Column('role_id', db.Integer, db.ForeignKey('role.id'), primary_key=True),
+    db.Column('folder_id', db.Integer, db.ForeignKey('folder.id'), primary_key=True)
+)
+
+class Role(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(50), unique=True, nullable=False)
+    description = db.Column(db.Text)
+    modules = db.relationship('Module', secondary=role_modules, lazy='subquery',
+        backref=db.backref('roles', lazy=True))
+    folders = db.relationship('Folder', secondary=role_folders, lazy='subquery',
+        backref=db.backref('roles', lazy=True))
+
+    def __repr__(self):
+        return f'<Role {self.name}>'
+
+class Folder(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    parent_id = db.Column(db.Integer, db.ForeignKey('folder.id'), nullable=True)
+    
+    subfolders = db.relationship('Folder', backref=db.backref('parent', remote_side=[id]), lazy=True, cascade="all, delete-orphan")
+    modules = db.relationship('Module', backref='folder', lazy=True)
+
+    def __repr__(self):
+        return f'<Folder {self.name}>'
+
+class AppSetting(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    key = db.Column(db.String(100), unique=True, nullable=False)
+    value = db.Column(db.Text)
+
 
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -19,6 +67,12 @@ class User(UserMixin, db.Model):
     
     # Relationship to access the modules a user can run
     modules = db.relationship('Module', secondary=user_modules, lazy='subquery',
+        backref=db.backref('users', lazy=True))
+        
+    roles = db.relationship('Role', secondary=user_roles, lazy='subquery',
+        backref=db.backref('users', lazy=True))
+        
+    folders = db.relationship('Folder', secondary=user_folders, lazy='subquery',
         backref=db.backref('users', lazy=True))
 
     def set_password(self, password):
@@ -58,8 +112,14 @@ class Module(db.Model):
     stored_proc_name = db.Column(db.String(100)) # Reused for job name if object_type=='job'
     parameters_json = db.Column(db.Text) # JSON string defining required parameters
     
+    # Organization
+    folder_id = db.Column(db.Integer, db.ForeignKey('folder.id'), nullable=True)
+    
     # For complex modules requiring Python logic
     custom_script_path = db.Column(db.String(255)) # e.g. 'modules/my_module.py'
+    custom_code = db.Column(db.Text) # Direct code entry
+    is_python_folder = db.Column(db.Boolean, default=False) # Whether it's a ZIP/folder module
+    python_entry_file = db.Column(db.String(255)) # main file to run within the folder
 
     def __repr__(self):
         return f'<Module {self.name}>'

@@ -1,0 +1,154 @@
+{% extends 'base.html' %}
+
+{% block title %}Manage Roles{% end block %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <h2><i class="fas fa-user-tag me-2"></i>Manage Roles</h2>
+            <p class="text-muted">Create and manage user roles and their associated permissions.</p>
+        </div>
+        <div class="col-md-6 text-end">
+            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createRoleModal">
+                <i class="fas fa-plus me-1"></i> New Role
+            </button>
+        </div>
+    </div>
+
+    <!-- Create Role Modal -->
+    <div class="modal fade" id="createRoleModal" tabindex="-1" aria-labelledby="createRoleModalLabel" aria-hidden="true">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <form action="{{ url_for('admin.roles') }}" method="POST">
+              <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title" id="createRoleModalLabel">Create New Role</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+              </div>
+              <div class="modal-body">
+                  <div class="mb-3">
+                      <label class="form-label">Role Name</label>
+                      <input type="text" class="form-control" name="name" required>
+                  </div>
+                  <div class="mb-3">
+                      <label class="form-label">Description</label>
+                      <textarea class="form-control" name="description" rows="3"></textarea>
+                  </div>
+              </div>
+              <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" class="btn btn-primary">Create Role</button>
+              </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <div class="card shadow-sm border-0">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0 align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>ID</th>
+                            <th>Role Name</th>
+                            <th>Description</th>
+                            <th>Permissions</th>
+                            <th class="text-end">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for role in roles %}
+                        <tr>
+                            <td>{{ role.id }}</td>
+                            <td><span class="fw-bold">{{ role.name }}</span></td>
+                            <td>{{ role.description }}</td>
+                            <td>
+                                <span class="badge bg-info">{{ role.modules|length }} Modules</span>
+                                <span class="badge bg-secondary">{{ role.folders|length }} Folders</span>
+                            </td>
+                            <td class="text-end">
+                                <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editRoleModal{{ role.id }}">
+                                    <i class="fas fa-edit"></i> Edit
+                                </button>
+                            </td>
+                        </tr>
+
+                        <!-- Edit Role Modal -->
+                        <div class="modal fade" id="editRoleModal{{ role.id }}" tabindex="-1" aria-labelledby="editRoleModalLabel{{ role.id }}" aria-hidden="true">
+                          <div class="modal-dialog modal-lg">
+                            <div class="modal-content">
+                              <form action="{{ url_for('admin.edit_role', role_id=role.id) }}" method="POST">
+                                  <div class="modal-header bg-light">
+                                    <h5 class="modal-title" id="editRoleModalLabel{{ role.id }}">Edit Role: {{ role.name }}</h5>
+                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                  </div>
+                                  <div class="modal-body">
+                                      <div class="mb-3">
+                                          <label class="form-label">Role Name</label>
+                                          <input type="text" class="form-control" name="name" value="{{ role.name }}" required>
+                                      </div>
+                                      <div class="mb-3">
+                                          <label class="form-label">Description</label>
+                                          <textarea class="form-control" name="description" rows="2">{{ role.description }}</textarea>
+                                      </div>
+                                      <hr>
+                                      <h6 class="mb-3">Assign Permissions</h6>
+                                      
+                                      <div class="row">
+                                          <div class="col-md-6">
+                                              <strong>Folders</strong>
+                                              <div class="list-group mt-2" style="max-height: 250px; overflow-y: auto;">
+                                                  {% for folder in folders %}
+                                                  <label class="list-group-item d-flex gap-2">
+                                                    <input class="form-check-input flex-shrink-0" type="checkbox" name="folder_ids" value="{{ folder.id }}" {% if folder in role.folders %}checked{% endif %}>
+                                                    <span>
+                                                      <i class="fas fa-folder text-warning me-1"></i> {{ folder.name }}
+                                                    </span>
+                                                  </label>
+                                                  {% else %}
+                                                  <div class="text-muted small">No folders available.</div>
+                                                  {% endfor %}
+                                              </div>
+                                          </div>
+                                          <div class="col-md-6">
+                                              <strong>Individual Modules</strong>
+                                              <div class="list-group mt-2" style="max-height: 250px; overflow-y: auto;">
+                                                  {% for mod in modules %}
+                                                  <label class="list-group-item d-flex gap-2">
+                                                    <input class="form-check-input flex-shrink-0" type="checkbox" name="module_ids" value="{{ mod.id }}" {% if mod in role.modules %}checked{% endif %}>
+                                                    <span>
+                                                      {{ mod.name }}
+                                                      <small class="d-block text-muted">{{ mod.description }}</small>
+                                                    </span>
+                                                  </label>
+                                                  {% else %}
+                                                  <div class="text-muted small">No modules available.</div>
+                                                  {% endfor %}
+                                              </div>
+                                          </div>
+                                      </div>
+                                  </div>
+                                  <div class="modal-footer">
+                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                                  </div>
+                              </form>
+                            </div>
+                          </div>
+                        </div>
+                        {% else %}
+                        <tr>
+                            <td colspan="5" class="text-center py-4 text-muted">
+                                <i class="fas fa-info-circle mb-2" style="font-size: 2rem;"></i><br>
+                                No roles found. Create one to get started.
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

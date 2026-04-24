@@ -2,6 +2,14 @@
 
 A cohesive IT self-serve portal built with Python, Flask, and Bootstrap 5. It allows end users to execute predefined database-oriented tasks safely through parameterized stored procedures or custom Python scripts. 
 
+## Features
+- **Hierarchical Access Control:** Organize users by Roles and group Modules into Folders. Assign entire Folders or individual Modules to Users or Roles in a flexible, tree-based permission system.
+- **Dynamic Execution:** Run SQL Server Stored Procedures, SQL Agent Jobs, or custom Python scripts.
+- **Python Streaming Output:** Execute custom Python modules natively (by direct code entry or uploading a ZIP directory) and watch the console output stream to the browser in real-time via Server-Sent Events (SSE).
+- **Custom Branding:** Upload your company logo via the Admin Settings page to customize the portal's appearance.
+
+---
+
 ## Ubuntu Server Setup Instructions
 
 These instructions will guide you through setting up a complete production-ready environment on an Ubuntu server (22.04 LTS recommended) using Nginx, Gunicorn, and MySQL.
@@ -12,7 +20,7 @@ Open terminal and install the basic system packages:
 ```bash
 sudo apt update
 sudo apt upgrade -y
-sudo apt install python3 python3-pip python3-venv nginx mysql-server libmysqlclient-dev pkg-config git curl -y
+sudo apt install python3 python3-pip python3-venv nginx mysql-server libmysqlclient-dev pkg-config git curl unzip -y
 ```
 
 Next, you need to install the **Microsoft ODBC Driver 18** and **unixODBC** development headers so the application can communicate with SQL Server databases:
@@ -62,6 +70,9 @@ sudo mkdir -p /opt/utilportal
 # Clone the repository
 git clone https://github.com/PIRTEKUS/UtilPortal.git /opt/utilportal
 cd /opt/utilportal
+
+# Ensure upload/data directories exist
+sudo mkdir -p static/uploads instance/modules_data
 
 # Set ownership and permissions so Nginx/Gunicorn can operate
 sudo chown -R $USER:www-data /opt/utilportal
@@ -158,15 +169,24 @@ server {
     ssl_certificate /etc/ssl/certs/nginx-selfsigned.crt;
     ssl_certificate_key /etc/ssl/private/nginx-selfsigned.key;
 
+    # Important for SSE real-time streaming
+    proxy_buffering off;
+    proxy_cache off;
+
     location / {
         include proxy_params;
         proxy_pass http://unix:/opt/utilportal/utilportal.sock;
         
         # Ensure Flask knows it's being accessed via HTTPS
         proxy_set_header X-Forwarded-Proto https;
+        
+        # Disable buffering for SSE stream endpoint
+        proxy_set_header Connection '';
+        proxy_http_version 1.1;
+        chunked_transfer_encoding off;
     }
 
-    # Optional: Serve static files directly via Nginx
+    # Serve static files directly via Nginx
     location /static/ {
         alias /opt/utilportal/static/;
     }
@@ -188,25 +208,24 @@ Open your web browser and navigate to your server's IP address or domain. The Ut
 
 ---
 
-## Updating the Application
+## Updating the Application on Ubuntu Server
 
-When new features or fixes are pushed to the GitHub repository, you can easily pull the latest code and apply it to your running server:
+When new features or fixes are pushed to the GitHub repository, you can easily pull the latest code and apply it to your running server. Run these exact commands:
 
 ```bash
-# Navigate to the project folder
+# 1. Navigate to the project folder
 cd /opt/utilportal
 
-# Pull the latest changes
+# 2. Pull the latest changes from Git
 sudo git pull
 
-# Activate your virtual environment and install any new dependencies
+# 3. Apply necessary filesystem changes or requirements
+sudo mkdir -p static/uploads instance/modules_data
+sudo chown -R $USER:www-data /opt/utilportal
+
 source venv/bin/activate
 pip install -r requirements.txt
 
-# Run the database init script again (safe to run on existing DBs)
-# to apply any new database schema changes
-python init_db.py
-
-# Restart the Gunicorn service so it serves the new code
+# 4. Restart the Gunicorn service so it serves the new code
 sudo systemctl restart utilportal
 ```

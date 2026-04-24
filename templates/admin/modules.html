@@ -27,9 +27,8 @@
                             <tr>
                                 <th>ID</th>
                                 <th>Name</th>
-                                <th>Description</th>
+                                <th>Folder</th>
                                 <th>Type</th>
-                                <th>Assigned Users</th>
                                 <th class="text-end">Actions</th>
                             </tr>
                         </thead>
@@ -38,12 +37,18 @@
                             <tr>
                                 <td>{{ module.id }}</td>
                                 <td class="fw-bold text-primary">{{ module.name }}</td>
-                                <td>{{ module.description[:50] + '...' if module.description and
-                                    module.description|length > 50 else module.description }}</td>
                                 <td>
-                                    {% if module.custom_script_path %}
-                                    <span class="badge bg-warning text-dark"><i class="bi bi-filetype-py me-1"></i>
-                                        Custom Script</span>
+                                    {% if module.folder %}
+                                    <span class="badge bg-secondary"><i class="fas fa-folder text-warning me-1"></i> {{ module.folder.name }}</span>
+                                    {% else %}
+                                    <span class="text-muted">None</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if module.is_python_folder %}
+                                    <span class="badge bg-warning text-dark"><i class="fab fa-python me-1"></i> Python (Zip)</span>
+                                    {% elif module.custom_code %}
+                                    <span class="badge bg-warning text-dark"><i class="fab fa-python me-1"></i> Python (Code)</span>
                                     {% else %}
                                     <span class="badge bg-info text-dark"><i class="bi bi-database me-1"></i>
                                         {% if module.object_type == 'job' %}SQL Job
@@ -51,30 +56,133 @@
                                     </span>
                                     {% endif %}
                                 </td>
-                                <td>{{ module.users|length }}</td>
                                 <td class="text-end">
                                     <button class="btn btn-sm btn-outline-info me-1" 
                                         data-bs-toggle="modal" 
-                                        data-bs-target="#editModuleModal"
-                                        data-id="{{ module.id }}"
-                                        data-name="{{ module.name }}"
-                                        data-desc="{{ module.description or '' }}"
-                                        data-type="{{ 'custom' if module.custom_script_path else 'generic' }}"
-                                        data-conn="{{ module.connection_id or '' }}"
-                                        data-obj="{{ module.object_type or '' }}"
-                                        data-db="{{ module.database_name or '' }}"
-                                        data-sp="{{ module.stored_proc_name or '' }}"
-                                        data-params="{{ module.parameters_json or '' }}"
-                                        data-script="{{ module.custom_script_path or '' }}"
-                                        onclick="openEditModal(this)">
-                                        <i class="bi bi-pencil"></i>
+                                        data-bs-target="#editModuleModal{{ module.id }}">
+                                        <i class="bi bi-pencil"></i> Edit
                                     </button>
-                                    <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
                                 </td>
                             </tr>
+
+                            <!-- Edit Module Modal (Per Module for simplicity of rendering) -->
+                            <div class="modal fade" id="editModuleModal{{ module.id }}" tabindex="-1" aria-hidden="true" data-bs-theme="dark">
+                                <div class="modal-dialog modal-lg">
+                                    <div class="modal-content bg-dark">
+                                        <div class="modal-header border-secondary">
+                                            <h5 class="modal-title">Edit Module: {{ module.name }}</h5>
+                                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                        </div>
+                                        <form action="{{ url_for('admin.edit_module', module_id=module.id) }}" method="post" enctype="multipart/form-data">
+                                            <div class="modal-body text-light">
+                                                <div class="row g-3">
+                                                    <div class="col-md-6">
+                                                        <label class="form-label">Module Name *</label>
+                                                        <input type="text" name="name" class="form-control" value="{{ module.name }}" required>
+                                                    </div>
+                                                    <div class="col-md-6">
+                                                        <label class="form-label">Folder</label>
+                                                        <select name="folder_id" class="form-select">
+                                                            <option value="">None (Root)</option>
+                                                            {% for f in folders %}
+                                                            <option value="{{ f.id }}" {% if module.folder_id == f.id %}selected{% endif %}>{{ f.name }}</option>
+                                                            {% endfor %}
+                                                        </select>
+                                                    </div>
+                                                    <div class="col-12">
+                                                        <label class="form-label">Type *</label>
+                                                        <select name="type" class="form-select editModuleTypeSelect" data-id="{{ module.id }}">
+                                                            <option value="generic" {% if not module.custom_code and not module.is_python_folder %}selected{% endif %}>Database Object (SP/Job)</option>
+                                                            <option value="custom" {% if module.custom_code or module.is_python_folder %}selected{% endif %}>Python Script (Code / Zip)</option>
+                                                        </select>
+                                                    </div>
+                                                    <div class="col-12">
+                                                        <label class="form-label">Description</label>
+                                                        <textarea name="description" class="form-control" rows="2">{{ module.description }}</textarea>
+                                                    </div>
+
+                                                    <!-- Generic SP fields -->
+                                                    <div class="col-12 edit-generic-fields-{{ module.id }}" style="display: {% if module.custom_code or module.is_python_folder %}none{% else %}block{% endif %};">
+                                                        <hr class="border-secondary">
+                                                        <h6 class="text-info">Database Configuration</h6>
+                                                        <div class="row g-3">
+                                                            <div class="col-md-6">
+                                                                <label class="form-label">Server Connection</label>
+                                                                <select name="connection_id" class="form-select">
+                                                                    <option value="">-- Select Connection --</option>
+                                                                    {% for conn in connections %}
+                                                                    <option value="{{ conn.id }}" {% if module.connection_id == conn.id %}selected{% endif %}>{{ conn.name }}</option>
+                                                                    {% endfor %}
+                                                                </select>
+                                                            </div>
+                                                            <div class="col-md-6">
+                                                                <label class="form-label">Object Type</label>
+                                                                <select name="object_type" class="form-select">
+                                                                    <option value="sp" {% if module.object_type == 'sp' %}selected{% endif %}>Stored Procedure</option>
+                                                                    <option value="job" {% if module.object_type == 'job' %}selected{% endif %}>SQL Server Job</option>
+                                                                </select>
+                                                            </div>
+                                                            <div class="col-md-6">
+                                                                <label class="form-label">Target Database</label>
+                                                                <input type="text" name="database_name" class="form-control" value="{{ module.database_name or '' }}">
+                                                            </div>
+                                                            <div class="col-md-6">
+                                                                <label class="form-label">Stored Procedure Name / Job Name</label>
+                                                                <input type="text" name="stored_proc_name" class="form-control" value="{{ module.stored_proc_name or '' }}">
+                                                            </div>
+                                                            <div class="col-12">
+                                                                <label class="form-label">Parameters JSON</label>
+                                                                <textarea name="parameters_json" class="form-control font-monospace" rows="3">{{ module.parameters_json or '' }}</textarea>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    <!-- Custom script fields -->
+                                                    <div class="col-12 edit-custom-fields-{{ module.id }}" style="display: {% if module.custom_code or module.is_python_folder %}block{% else %}none{% endif %};">
+                                                        <hr class="border-secondary">
+                                                        <h6 class="text-warning">Python Execution</h6>
+                                                        
+                                                        <ul class="nav nav-tabs border-secondary mb-3" role="tablist">
+                                                            <li class="nav-item" role="presentation">
+                                                                <button class="nav-link bg-dark text-light {% if module.custom_code and not module.is_python_folder %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#edit-code-{{ module.id }}" type="button" role="tab">Direct Code</button>
+                                                            </li>
+                                                            <li class="nav-item" role="presentation">
+                                                                <button class="nav-link bg-dark text-light {% if module.is_python_folder %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#edit-zip-{{ module.id }}" type="button" role="tab">Upload ZIP</button>
+                                                            </li>
+                                                        </ul>
+                                                        
+                                                        <div class="tab-content">
+                                                            <div class="tab-pane fade {% if module.custom_code and not module.is_python_folder %}show active{% endif %}" id="edit-code-{{ module.id }}" role="tabpanel">
+                                                                <label class="form-label">Python Source Code</label>
+                                                                <textarea name="custom_code" class="form-control font-monospace text-light bg-dark" rows="10">{{ module.custom_code or '' }}</textarea>
+                                                            </div>
+                                                            
+                                                            <div class="tab-pane fade {% if module.is_python_folder %}show active{% endif %}" id="edit-zip-{{ module.id }}" role="tabpanel">
+                                                                <div class="mb-3">
+                                                                    <label class="form-label">Upload ZIP Folder (Replaces current)</label>
+                                                                    <input class="form-control" type="file" name="zip_file" accept=".zip">
+                                                                </div>
+                                                                <div class="mb-3">
+                                                                    <label class="form-label">Entry File</label>
+                                                                    <input type="text" name="python_entry_file" class="form-control" value="{{ module.python_entry_file or 'main.py' }}">
+                                                                    <div class="form-text">If a zip is already uploaded, this determines which file to run (e.g., main.py).</div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="modal-footer border-secondary">
+                                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                                <button type="submit" class="btn btn-primary">Update Module</button>
+                                            </div>
+                                        </form>
+                                    </div>
+                                </div>
+                            </div>
                             {% else %}
                             <tr>
-                                <td colspan="6" class="text-center py-4 text-muted">
+                                <td colspan="5" class="text-center py-4 text-muted">
                                     No modules configured yet.
                                 </td>
                             </tr>
@@ -95,82 +203,101 @@
                 <h5 class="modal-title">Create New Module</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <form action="{{ url_for('admin.create_module') }}" method="post">
+            <form action="{{ url_for('admin.create_module') }}" method="post" enctype="multipart/form-data">
                 <div class="modal-body text-light">
                     <div class="row g-3">
                         <div class="col-md-6">
                             <label class="form-label">Module Name *</label>
-                            <input type="text" name="name" class="form-control" required
-                                placeholder="e.g. Reset VPN Connection">
+                            <input type="text" name="name" class="form-control" required placeholder="e.g. Data Sync">
                         </div>
                         <div class="col-md-6">
+                            <label class="form-label">Folder</label>
+                            <select name="folder_id" class="form-select">
+                                <option value="">None (Root)</option>
+                                {% for f in folders %}
+                                <option value="{{ f.id }}">{{ f.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-12">
                             <label class="form-label">Type *</label>
-                            <select name="type" class="form-select" id="moduleTypeSelect"
-                                onchange="toggleTypeSpecifics()">
+                            <select name="type" class="form-select" id="createModuleTypeSelect">
                                 <option value="generic">Database Object (SP/Job)</option>
-                                <option value="custom">Custom Python Script</option>
+                                <option value="custom">Python Script (Code / Zip)</option>
                             </select>
                         </div>
                         <div class="col-12">
                             <label class="form-label">Description</label>
-                            <textarea name="description" class="form-control" rows="2"
-                                placeholder="Brief explanation of what this does..."></textarea>
+                            <textarea name="description" class="form-control" rows="2" placeholder="Brief explanation of what this does..."></textarea>
                         </div>
 
                         <!-- Generic SP fields -->
-                        <div class="col-12 generic-fields">
+                        <div class="col-12 create-generic-fields">
                             <hr class="border-secondary">
                             <h6 class="text-info">Database Configuration</h6>
-                        </div>
-                        <div class="col-md-6 generic-fields">
-                            <label class="form-label">Server Connection *</label>
-                            <select name="connection_id" class="form-select" id="connectionSelect"
-                                onchange="handleConnectionChange()">
-                                <option value="">-- Select Connection --</option>
-                                {% for conn in connections %}
-                                <option value="{{ conn.id }}" data-type="{{ conn.server_type }}">{{ conn.name }} ({{
-                                    conn.server_type }})</option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                        <div class="col-md-6 generic-fields">
-                            <label class="form-label">Object Type *</label>
-                            <select name="object_type" class="form-select" id="objectTypeSelect"
-                                onchange="handleObjectTypeChange()">
-                                <option value="sp">Stored Procedure</option>
-                                <option value="job">SQL Server Job</option>
-                            </select>
-                        </div>
-                        <div class="col-md-6 generic-fields" id="databaseContainer">
-                            <label class="form-label">Target Database</label>
-                            <select name="database_name" class="form-select" id="databaseSelect">
-                                <option value="">-- Select DB (Select Connection first) --</option>
-                            </select>
-                        </div>
-                        <div class="col-md-6 generic-fields">
-                            <label class="form-label" id="spLabel">Stored Procedure Name / Job Name</label>
-                            <input type="text" name="stored_proc_name" class="form-control"
-                                placeholder="e.g. sp_reset_user_vpn">
-                        </div>
-                        <div class="col-12 generic-fields">
-                            <label class="form-label">Parameters JSON (Optional)</label>
-                            <textarea name="parameters_json" class="form-control font-monospace" rows="4"
-                                placeholder='[{"name":"username", "label":"Username", "type":"text", "required":true}]'></textarea>
-                            <div class="form-text text-muted">Define the fields the user needs to fill out before
-                                executing.</div>
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="form-label">Server Connection</label>
+                                    <select name="connection_id" class="form-select" id="create_connectionSelect">
+                                        <option value="">-- Select Connection --</option>
+                                        {% for conn in connections %}
+                                        <option value="{{ conn.id }}" data-type="{{ conn.server_type }}">{{ conn.name }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Object Type</label>
+                                    <select name="object_type" class="form-select" id="create_objectTypeSelect">
+                                        <option value="sp">Stored Procedure</option>
+                                        <option value="job">SQL Server Job</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Target Database</label>
+                                    <input type="text" name="database_name" class="form-control" placeholder="Optional">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Stored Procedure Name / Job Name</label>
+                                    <input type="text" name="stored_proc_name" class="form-control" placeholder="e.g. sp_reset_vpn">
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label">Parameters JSON</label>
+                                    <textarea name="parameters_json" class="form-control font-monospace" rows="3"></textarea>
+                                </div>
+                            </div>
                         </div>
 
                         <!-- Custom script fields -->
-                        <div class="col-12 custom-fields" style="display:none;">
+                        <div class="col-12 create-custom-fields" style="display:none;">
                             <hr class="border-secondary">
-                            <h6 class="text-warning">Custom Script Configuration</h6>
-                        </div>
-                        <div class="col-12 custom-fields" style="display:none;">
-                            <label class="form-label">Python Script Path *</label>
-                            <input type="text" name="custom_script_path" class="form-control"
-                                placeholder="modules/my_custom_script.py">
-                            <div class="form-text text-warning">This script will handle all rendering, data fetching,
-                                and execution logic.</div>
+                            <h6 class="text-warning">Python Execution</h6>
+                            
+                            <ul class="nav nav-tabs border-secondary mb-3" role="tablist">
+                                <li class="nav-item" role="presentation">
+                                    <button class="nav-link active bg-dark text-light" data-bs-toggle="tab" data-bs-target="#create-code" type="button" role="tab">Direct Code</button>
+                                </li>
+                                <li class="nav-item" role="presentation">
+                                    <button class="nav-link bg-dark text-light" data-bs-toggle="tab" data-bs-target="#create-zip" type="button" role="tab">Upload ZIP</button>
+                                </li>
+                            </ul>
+                            
+                            <div class="tab-content">
+                                <div class="tab-pane fade show active" id="create-code" role="tabpanel">
+                                    <label class="form-label">Python Source Code</label>
+                                    <textarea name="custom_code" class="form-control font-monospace text-light bg-dark" rows="10" placeholder="print('Hello World')"></textarea>
+                                </div>
+                                
+                                <div class="tab-pane fade" id="create-zip" role="tabpanel">
+                                    <div class="mb-3">
+                                        <label class="form-label">Upload ZIP Folder</label>
+                                        <input class="form-control" type="file" name="zip_file" accept=".zip">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Entry File</label>
+                                        <input type="text" name="python_entry_file" class="form-control" value="main.py" placeholder="main.py">
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -182,260 +309,35 @@
         </div>
     </div>
 </div>
-<!-- Edit Module Modal -->
-<div class="modal fade" id="editModuleModal" tabindex="-1" aria-hidden="true" data-bs-theme="dark">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content bg-dark">
-            <div class="modal-header border-secondary">
-                <h5 class="modal-title">Edit Module</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <form id="editModuleForm" action="" method="post">
-                <div class="modal-body text-light">
-                    <div class="row g-3">
-                        <div class="col-md-6">
-                            <label class="form-label">Module Name *</label>
-                            <input type="text" name="name" id="edit_name" class="form-control" required>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">Type *</label>
-                            <select name="type" class="form-select" id="edit_moduleTypeSelect" onchange="toggleTypeSpecificsEdit()">
-                                <option value="generic">Database Object (SP/Job)</option>
-                                <option value="custom">Custom Python Script</option>
-                            </select>
-                        </div>
-                        <div class="col-12">
-                            <label class="form-label">Description</label>
-                            <textarea name="description" id="edit_description" class="form-control" rows="2"></textarea>
-                        </div>
 
-                        <div class="col-12 edit-generic-fields">
-                            <hr class="border-secondary">
-                            <h6 class="text-info">Database Configuration</h6>
-                        </div>
-                        <div class="col-md-6 edit-generic-fields">
-                            <label class="form-label">Server Connection *</label>
-                            <select name="connection_id" class="form-select" id="edit_connectionSelect" onchange="handleConnectionChangeEdit()">
-                                <option value="">-- Select Connection --</option>
-                                {% for conn in connections %}
-                                <option value="{{ conn.id }}" data-type="{{ conn.server_type }}">{{ conn.name }} ({{ conn.server_type }})</option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                        <div class="col-md-6 edit-generic-fields">
-                            <label class="form-label">Object Type *</label>
-                            <select name="object_type" class="form-select" id="edit_objectTypeSelect" onchange="handleObjectTypeChangeEdit()">
-                                <option value="sp">Stored Procedure</option>
-                                <option value="job">SQL Server Job</option>
-                            </select>
-                        </div>
-                        <div class="col-md-6 edit-generic-fields" id="edit_databaseContainer">
-                            <label class="form-label">Target Database</label>
-                            <select name="database_name" class="form-select" id="edit_databaseSelect">
-                                <option value="">-- Select DB (Select Connection first) --</option>
-                            </select>
-                        </div>
-                        <div class="col-md-6 edit-generic-fields">
-                            <label class="form-label" id="edit_spLabel">Stored Procedure Name / Job Name</label>
-                            <input type="text" name="stored_proc_name" id="edit_stored_proc_name" class="form-control">
-                        </div>
-                        <div class="col-12 edit-generic-fields">
-                            <label class="form-label">Parameters JSON (Optional)</label>
-                            <textarea name="parameters_json" id="edit_parameters_json" class="form-control font-monospace" rows="4"></textarea>
-                            <div class="form-text text-muted">Leave empty to dynamically fetch parameters from SP.</div>
-                        </div>
-
-                        <div class="col-12 edit-custom-fields" style="display:none;">
-                            <hr class="border-secondary">
-                            <h6 class="text-warning">Custom Script Configuration</h6>
-                        </div>
-                        <div class="col-12 edit-custom-fields" style="display:none;">
-                            <label class="form-label">Python Script Path *</label>
-                            <input type="text" name="custom_script_path" id="edit_custom_script_path" class="form-control">
-                        </div>
-                    </div>
-                </div>
-                <div class="modal-footer border-secondary">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Update Module</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
 <script>
-    function toggleTypeSpecifics() {
-        const type = document.getElementById('moduleTypeSelect').value;
-        const genFields = document.querySelectorAll('.generic-fields');
-        const custFields = document.querySelectorAll('.custom-fields');
-
+    document.getElementById('createModuleTypeSelect').addEventListener('change', function() {
+        const type = this.value;
+        const genFields = document.querySelector('.create-generic-fields');
+        const custFields = document.querySelector('.create-custom-fields');
         if (type === 'generic') {
-            genFields.forEach(el => el.style.display = 'block');
-            custFields.forEach(el => el.style.display = 'none');
-            handleObjectTypeChange(); // Re-sync fields when toggled back
+            genFields.style.display = 'block';
+            custFields.style.display = 'none';
         } else {
-            genFields.forEach(el => el.style.display = 'none');
-            custFields.forEach(el => el.style.display = 'block');
+            genFields.style.display = 'none';
+            custFields.style.display = 'block';
         }
-    }
+    });
 
-    function handleObjectTypeChange() {
-        const objType = document.getElementById('objectTypeSelect').value;
-        const dbContainer = document.getElementById('databaseContainer');
-        const spLabel = document.getElementById('spLabel');
-
-        if (objType === 'job') {
-            dbContainer.style.display = 'none';
-            spLabel.textContent = 'SQL Agent Job Name *';
-        } else {
-            dbContainer.style.display = 'block';
-            spLabel.textContent = 'Stored Procedure Name *';
-            handleConnectionChange(); // fetch DBs if needed
-        }
-    }
-
-    function handleConnectionChange() {
-        const connSelect = document.getElementById('connectionSelect');
-        const objType = document.getElementById('objectTypeSelect').value;
-        const dbSelect = document.getElementById('databaseSelect');
-
-        if (objType === 'job') return; // Jobs don't need a specific target DB selected usually (they run on MSDB)
-
-        const selectedOption = connSelect.options[connSelect.selectedIndex];
-        if (!selectedOption.value) {
-            dbSelect.innerHTML = '<option value="">-- Select DB (Select Connection first) --</option>';
-            return;
-        }
-
-        const type = selectedOption.getAttribute('data-type');
-
-        if (type === 'sqlserver') {
-            dbSelect.innerHTML = '<option value="">Loading databases...</option>';
-            dbSelect.disabled = true;
-
-            fetch(`/admin/api/connections/${selectedOption.value}/databases`)
-                .then(response => response.json())
-                .then(data => {
-                    dbSelect.innerHTML = '<option value="">-- Select Database --</option>';
-                    if (data.databases) {
-                        data.databases.forEach(db => {
-                            dbSelect.innerHTML += `<option value="${db}">${db}</option>`;
-                        });
-                    } else if (data.error) {
-                        dbSelect.innerHTML = `<option value="">Error: ${data.error}</option>`;
-                    }
-                })
-                .catch(err => {
-                    dbSelect.innerHTML = '<option value="">Failed to fetch DBs.</option>';
-                })
-                .finally(() => {
-                    dbSelect.disabled = false;
-                });
-        } else {
-            // MySQL or other - manual entry or predefined list
-            dbSelect.innerHTML = '<option value="">Manual DB entry not fully supported yet for MySQL</option>';
-            dbSelect.disabled = false;
-        }
-    }
-
-    function openEditModal(btn) {
-        const id = btn.getAttribute('data-id');
-        document.getElementById('editModuleForm').action = `/admin/modules/edit/${id}`;
-        document.getElementById('edit_name').value = btn.getAttribute('data-name');
-        document.getElementById('edit_description').value = btn.getAttribute('data-desc');
-        document.getElementById('edit_moduleTypeSelect').value = btn.getAttribute('data-type');
-        
-        document.getElementById('edit_connectionSelect').value = btn.getAttribute('data-conn');
-        document.getElementById('edit_objectTypeSelect').value = btn.getAttribute('data-obj') || 'sp';
-        
-        document.getElementById('edit_databaseSelect').setAttribute('data-preselected', btn.getAttribute('data-db'));
-        
-        document.getElementById('edit_stored_proc_name').value = btn.getAttribute('data-sp');
-        document.getElementById('edit_parameters_json').value = btn.getAttribute('data-params');
-        document.getElementById('edit_custom_script_path').value = btn.getAttribute('data-script');
-
-        toggleTypeSpecificsEdit();
-    }
-
-    function toggleTypeSpecificsEdit() {
-        const type = document.getElementById('edit_moduleTypeSelect').value;
-        const genFields = document.querySelectorAll('.edit-generic-fields');
-        const custFields = document.querySelectorAll('.edit-custom-fields');
-
-        if (type === 'generic') {
-            genFields.forEach(el => el.style.display = 'block');
-            custFields.forEach(el => el.style.display = 'none');
-            handleObjectTypeChangeEdit(); 
-        } else {
-            genFields.forEach(el => el.style.display = 'none');
-            custFields.forEach(el => el.style.display = 'block');
-        }
-    }
-
-    function handleObjectTypeChangeEdit() {
-        const objType = document.getElementById('edit_objectTypeSelect').value;
-        const dbContainer = document.getElementById('edit_databaseContainer');
-        const spLabel = document.getElementById('edit_spLabel');
-
-        if (objType === 'job') {
-            dbContainer.style.display = 'none';
-            spLabel.textContent = 'SQL Agent Job Name *';
-        } else {
-            dbContainer.style.display = 'block';
-            spLabel.textContent = 'Stored Procedure Name *';
-            handleConnectionChangeEdit(); 
-        }
-    }
-
-    function handleConnectionChangeEdit() {
-        const connSelect = document.getElementById('edit_connectionSelect');
-        const objType = document.getElementById('edit_objectTypeSelect').value;
-        const dbSelect = document.getElementById('edit_databaseSelect');
-        const preselectedDb = dbSelect.getAttribute('data-preselected');
-
-        if (objType === 'job') return;
-
-        const selectedOption = connSelect.options[connSelect.selectedIndex];
-        if (!selectedOption || !selectedOption.value) {
-            dbSelect.innerHTML = '<option value="">-- Select DB (Select Connection first) --</option>';
-            return;
-        }
-
-        const type = selectedOption.getAttribute('data-type');
-
-        if (type === 'sqlserver') {
-            dbSelect.innerHTML = '<option value="">Loading databases...</option>';
-            dbSelect.disabled = true;
-
-            fetch(`/admin/api/connections/${selectedOption.value}/databases`)
-                .then(response => response.json())
-                .then(data => {
-                    dbSelect.innerHTML = '<option value="">-- Select Database --</option>';
-                    if (data.databases) {
-                        data.databases.forEach(db => {
-                            const isSelected = (db === preselectedDb) ? 'selected' : '';
-                            dbSelect.innerHTML += `<option value="${db}" ${isSelected}>${db}</option>`;
-                        });
-                        dbSelect.setAttribute('data-preselected', '');
-                    } else if (data.error) {
-                        dbSelect.innerHTML = `<option value="">Error: ${data.error}</option>`;
-                    }
-                })
-                .catch(err => {
-                    dbSelect.innerHTML = '<option value="">Failed to fetch DBs.</option>';
-                })
-                .finally(() => {
-                    dbSelect.disabled = false;
-                });
-        } else {
-            dbSelect.innerHTML = '<option value="">Manual DB entry not fully supported yet for MySQL</option>';
-            dbSelect.disabled = false;
-        }
-    }
-
-    // Initialize
-    document.addEventListener('DOMContentLoaded', () => {
-        toggleTypeSpecifics();
+    document.querySelectorAll('.editModuleTypeSelect').forEach(select => {
+        select.addEventListener('change', function() {
+            const id = this.getAttribute('data-id');
+            const type = this.value;
+            const genFields = document.querySelector(`.edit-generic-fields-${id}`);
+            const custFields = document.querySelector(`.edit-custom-fields-${id}`);
+            if (type === 'generic') {
+                genFields.style.display = 'block';
+                custFields.style.display = 'none';
+            } else {
+                genFields.style.display = 'none';
+                custFields.style.display = 'block';
+            }
+        });
     });
 </script>
 {% endblock %}

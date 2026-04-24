@@ -2,15 +2,26 @@
 {% block title %}Manage Users{% endblock %}
 
 {% block content %}
+<style>
+    /* Simple tree styling using details/summary */
+    .tree-view { margin: 0; padding: 0; list-style: none; }
+    .tree-view details { margin-left: 1rem; }
+    .tree-view summary { cursor: pointer; user-select: none; font-weight: bold; margin-bottom: 0.25rem;}
+    .tree-view summary:hover { color: var(--bs-primary); }
+    .tree-view ul { margin-left: 1.5rem; padding-left: 0; list-style: none; border-left: 1px dashed #6c757d; }
+    .tree-view li { position: relative; padding-left: 1rem; margin-bottom: 0.25rem; }
+    .tree-view li::before {
+        content: ""; position: absolute; top: 0.75rem; left: 0; width: 0.8rem; height: 1px; border-top: 1px dashed #6c757d;
+    }
+</style>
 <div class="row mb-4">
     <div class="col-12 d-flex justify-content-between align-items-center">
         <div>
             <h3 class="fw-bold"><i class="bi bi-people-fill me-2 text-primary"></i>User & Permissions Management</h3>
-            <p class="text-muted mb-0">Assign self-service modules to users.</p>
+            <p class="text-muted mb-0">Assign roles, folders, and individual modules to users.</p>
         </div>
         <div>
             <a href="{{ url_for('admin.dashboard') }}" class="btn btn-outline-secondary me-2">Back</a>
-            <!-- Note: User creation should happen via SSO or a dedicated sync, but here's a local placeholder -->
             <button class="btn btn-primary" onclick="alert('In SSO mode, users are auto-created.')"><i
                     class="bi bi-person-plus"></i> Invite User</button>
         </div>
@@ -27,8 +38,8 @@
                             <tr>
                                 <th>ID</th>
                                 <th>Email</th>
-                                <th>Role</th>
-                                <th>Assigned Modules</th>
+                                <th>Admin</th>
+                                <th>Assignments</th>
                                 <th class="text-end">Actions</th>
                             </tr>
                         </thead>
@@ -46,17 +57,18 @@
                                 </td>
                                 <td>
                                     {% if user.is_admin() %}
-                                    <em class="text-muted">Admins have all access</em>
+                                    <em class="text-muted">All access</em>
                                     {% else %}
-                                    {{ user.modules|length }} modules
+                                    <span class="badge bg-primary">{{ user.roles|length }} Roles</span>
+                                    <span class="badge bg-warning text-dark">{{ user.folders|length }} Folders</span>
+                                    <span class="badge bg-info text-dark">{{ user.modules|length }} Modules</span>
                                     {% endif %}
                                 </td>
                                 <td class="text-end">
                                     <form action="{{ url_for('admin.toggle_user_admin', user_id=user.id) }}"
                                         method="post" class="d-inline">
                                         {% if user.is_admin() %}
-                                        <button type="submit" class="btn btn-sm btn-outline-danger me-1" {% if
-                                            user.id==current_user.id %}disabled{% endif %}>
+                                        <button type="submit" class="btn btn-sm btn-outline-danger me-1" {% if user.id==current_user.id %}disabled{% endif %}>
                                             <i class="bi bi-person-down me-1"></i> Revoke Admin
                                         </button>
                                         {% else %}
@@ -72,53 +84,112 @@
                                 </td>
                             </tr>
 
-                            <!-- Edit Permissions Modal for exactly this user -->
-                            <div class="modal fade" id="editUserModal{{ user.id }}" tabindex="-1" aria-hidden="true"
-                                data-bs-theme="dark">
-                                <div class="modal-dialog">
+                            <!-- Edit Permissions Modal -->
+                            <div class="modal fade" id="editUserModal{{ user.id }}" tabindex="-1" aria-hidden="true" data-bs-theme="dark">
+                                <div class="modal-dialog modal-lg">
                                     <div class="modal-content bg-dark">
                                         <div class="modal-header border-secondary">
-                                            <h5 class="modal-title">Module Access: {{ user.email }}</h5>
-                                            <button type="button" class="btn-close" data-bs-dismiss="modal"
-                                                aria-label="Close"></button>
+                                            <h5 class="modal-title">Permissions: {{ user.email }}</h5>
+                                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                                         </div>
-                                        <form action="{{ url_for('admin.update_user_permissions', user_id=user.id) }}"
-                                            method="post">
+                                        <form action="{{ url_for('admin.update_user_permissions', user_id=user.id) }}" method="post">
                                             <div class="modal-body text-light">
-                                                <p>Select the modules this user is allowed to execute:</p>
                                                 {% if user.is_admin() %}
-                                                <div
-                                                    class="alert alert-warning border-warning bg-transparent text-warning">
-                                                    <i class="bi bi-exclamation-triangle"></i> This user is an Admin and
-                                                    bypasses module restrictions.
+                                                <div class="alert alert-warning border-warning bg-transparent text-warning">
+                                                    <i class="bi bi-exclamation-triangle"></i> This user is an Admin and bypasses module restrictions.
                                                 </div>
                                                 {% endif %}
 
-                                                <div class="list-group list-group-flush bg-dark border-secondary border rounded overflow-auto"
-                                                    style="max-height: 300px;">
-                                                    {% for module in modules %}
-                                                    <label
-                                                        class="list-group-item bg-dark text-light border-secondary d-flex align-items-center">
-                                                        <input class="form-check-input me-3" type="checkbox"
-                                                            name="module_ids" value="{{ module.id }}" {% if module in
-                                                            user.modules %}checked{% endif %} {% if user.is_admin()
-                                                            %}disabled{% endif %}>
-                                                        <div>
-                                                            <div class="fw-bold">{{ module.name }}</div>
-                                                            <small class="text-muted d-block">{{ module.description[:50]
-                                                                }}</small>
+                                                <div class="row">
+                                                    <!-- Roles Column -->
+                                                    <div class="col-md-4 border-end border-secondary">
+                                                        <h6 class="text-primary"><i class="fas fa-user-tag me-1"></i> Roles</h6>
+                                                        <div class="tree-view mt-3">
+                                                            {% for role in roles %}
+                                                            <div class="form-check mb-2">
+                                                                <input class="form-check-input" type="checkbox" name="role_ids" value="{{ role.id }}" id="role_{{ user.id }}_{{ role.id }}" {% if role in user.roles %}checked{% endif %} {% if user.is_admin() %}disabled{% endif %}>
+                                                                <label class="form-check-label" for="role_{{ user.id }}_{{ role.id }}">
+                                                                    {{ role.name }}
+                                                                </label>
+                                                            </div>
+                                                            {% else %}
+                                                            <div class="text-muted small">No roles defined.</div>
+                                                            {% endfor %}
                                                         </div>
-                                                    </label>
-                                                    {% else %}
-                                                    <div class="p-3 text-muted text-center">No modules exist yet.</div>
-                                                    {% endfor %}
+                                                    </div>
+
+                                                    <!-- Folders & Modules Column (Tree View) -->
+                                                    <div class="col-md-8">
+                                                        <h6 class="text-warning"><i class="fas fa-sitemap me-1"></i> Folders & Modules</h6>
+                                                        <p class="small text-muted mb-2">Assign entire folders or individual modules.</p>
+                                                        
+                                                        <div class="tree-view mt-3 bg-dark border-secondary border p-3 rounded" style="max-height: 400px; overflow-y: auto;">
+                                                            <!-- Recursive macro could be used here for N-level deep folders, but sticking to flat loop for simplicity if structure is mostly 1-2 levels, or we can just iterate. -->
+                                                            {% macro render_folder(f) %}
+                                                            <details open>
+                                                                <summary>
+                                                                    <div class="form-check d-inline-block m-0">
+                                                                        <input class="form-check-input" type="checkbox" name="folder_ids" value="{{ f.id }}" id="f_{{ user.id }}_{{ f.id }}" {% if f in user.folders %}checked{% endif %} {% if user.is_admin() %}disabled{% endif %} onclick="event.stopPropagation();">
+                                                                        <label class="form-check-label" for="f_{{ user.id }}_{{ f.id }}" onclick="event.stopPropagation();">
+                                                                            <i class="fas fa-folder text-warning mx-1"></i> {{ f.name }}
+                                                                        </label>
+                                                                    </div>
+                                                                </summary>
+                                                                <ul>
+                                                                    <!-- Subfolders -->
+                                                                    {% for sub in f.subfolders %}
+                                                                    <li>{{ render_folder(sub) }}</li>
+                                                                    {% endfor %}
+                                                                    
+                                                                    <!-- Modules in this folder -->
+                                                                    {% for m in f.modules %}
+                                                                    <li>
+                                                                        <div class="form-check m-0">
+                                                                            <input class="form-check-input" type="checkbox" name="module_ids" value="{{ m.id }}" id="m_{{ user.id }}_{{ m.id }}" {% if m in user.modules %}checked{% endif %} {% if user.is_admin() %}disabled{% endif %}>
+                                                                            <label class="form-check-label text-info" for="m_{{ user.id }}_{{ m.id }}">
+                                                                                <i class="fas fa-plug me-1"></i> {{ m.name }}
+                                                                            </label>
+                                                                        </div>
+                                                                    </li>
+                                                                    {% endfor %}
+                                                                </ul>
+                                                            </details>
+                                                            {% endmacro %}
+
+                                                            <!-- Render Root Folders -->
+                                                            {% for folder in folders %}
+                                                                {% if not folder.parent_id %}
+                                                                    {{ render_folder(folder) }}
+                                                                {% endif %}
+                                                            {% endfor %}
+
+                                                            <!-- Render Root Modules -->
+                                                            <details open class="mt-2">
+                                                                <summary>
+                                                                    <i class="fas fa-folder-open text-secondary mx-1"></i> Uncategorized Modules
+                                                                </summary>
+                                                                <ul>
+                                                                    {% for m in modules %}
+                                                                        {% if not m.folder_id %}
+                                                                        <li>
+                                                                            <div class="form-check m-0">
+                                                                                <input class="form-check-input" type="checkbox" name="module_ids" value="{{ m.id }}" id="mu_{{ user.id }}_{{ m.id }}" {% if m in user.modules %}checked{% endif %} {% if user.is_admin() %}disabled{% endif %}>
+                                                                                <label class="form-check-label text-info" for="mu_{{ user.id }}_{{ m.id }}">
+                                                                                    <i class="fas fa-plug me-1"></i> {{ m.name }}
+                                                                                </label>
+                                                                            </div>
+                                                                        </li>
+                                                                        {% endif %}
+                                                                    {% endfor %}
+                                                                </ul>
+                                                            </details>
+                                                        </div>
+                                                    </div>
                                                 </div>
                                             </div>
                                             <div class="modal-footer border-secondary">
-                                                <button type="button" class="btn btn-secondary"
-                                                    data-bs-dismiss="modal">Cancel</button>
-                                                <button type="submit" class="btn btn-primary" {% if user.is_admin()
-                                                    %}disabled{% endif %}>Save Permissions</button>
+                                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                                <button type="submit" class="btn btn-primary" {% if user.is_admin() %}disabled{% endif %}>Save Permissions</button>
                                             </div>
                                         </form>
                                     </div>

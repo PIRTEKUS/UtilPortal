@@ -1,0 +1,135 @@
+{% extends 'base.html' %}
+
+{% block title %}Manage Folders{% end block %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <h2><i class="fas fa-folder-open me-2"></i>Manage Folders</h2>
+            <p class="text-muted">Create and manage folders to organize your modules hierarchically.</p>
+        </div>
+        <div class="col-md-6 text-end">
+            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createFolderModal">
+                <i class="fas fa-plus me-1"></i> New Folder
+            </button>
+        </div>
+    </div>
+
+    <!-- Create Folder Modal -->
+    <div class="modal fade" id="createFolderModal" tabindex="-1" aria-labelledby="createFolderModalLabel" aria-hidden="true">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <form action="{{ url_for('admin.folders') }}" method="POST">
+              <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title" id="createFolderModalLabel">Create New Folder</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+              </div>
+              <div class="modal-body">
+                  <div class="mb-3">
+                      <label class="form-label">Folder Name</label>
+                      <input type="text" class="form-control" name="name" required>
+                  </div>
+                  <div class="mb-3">
+                      <label class="form-label">Parent Folder (Optional)</label>
+                      <select class="form-select" name="parent_id">
+                          <option value="">None (Root Level)</option>
+                          {% for folder in folders %}
+                          <option value="{{ folder.id }}">{{ folder.name }}</option>
+                          {% endfor %}
+                      </select>
+                  </div>
+              </div>
+              <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" class="btn btn-primary">Create Folder</button>
+              </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <div class="card shadow-sm border-0">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0 align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>ID</th>
+                            <th>Folder Name</th>
+                            <th>Parent Folder</th>
+                            <th>Modules Inside</th>
+                            <th class="text-end">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for folder in folders %}
+                        <tr>
+                            <td>{{ folder.id }}</td>
+                            <td><i class="fas fa-folder text-warning me-2"></i><span class="fw-bold">{{ folder.name }}</span></td>
+                            <td>
+                                {% if folder.parent %}
+                                <span class="badge bg-secondary">{{ folder.parent.name }}</span>
+                                {% else %}
+                                <span class="text-muted">Root</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <span class="badge bg-info">{{ folder.modules|length }} Modules</span>
+                            </td>
+                            <td class="text-end">
+                                <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editFolderModal{{ folder.id }}">
+                                    <i class="fas fa-edit"></i> Edit
+                                </button>
+                            </td>
+                        </tr>
+
+                        <!-- Edit Folder Modal -->
+                        <div class="modal fade" id="editFolderModal{{ folder.id }}" tabindex="-1" aria-labelledby="editFolderModalLabel{{ folder.id }}" aria-hidden="true">
+                          <div class="modal-dialog">
+                            <div class="modal-content">
+                              <form action="{{ url_for('admin.edit_folder', folder_id=folder.id) }}" method="POST">
+                                  <div class="modal-header bg-light">
+                                    <h5 class="modal-title" id="editFolderModalLabel{{ folder.id }}">Edit Folder: {{ folder.name }}</h5>
+                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                  </div>
+                                  <div class="modal-body">
+                                      <div class="mb-3">
+                                          <label class="form-label">Folder Name</label>
+                                          <input type="text" class="form-control" name="name" value="{{ folder.name }}" required>
+                                      </div>
+                                      <div class="mb-3">
+                                          <label class="form-label">Parent Folder (Optional)</label>
+                                          <select class="form-select" name="parent_id">
+                                              <option value="">None (Root Level)</option>
+                                              {% for f in folders %}
+                                                {% if f.id != folder.id %}
+                                                <option value="{{ f.id }}" {% if folder.parent_id == f.id %}selected{% endif %}>{{ f.name }}</option>
+                                                {% endif %}
+                                              {% endfor %}
+                                          </select>
+                                      </div>
+                                  </div>
+                                  <div class="modal-footer">
+                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                                  </div>
+                              </form>
+                            </div>
+                          </div>
+                        </div>
+                        {% else %}
+                        <tr>
+                            <td colspan="5" class="text-center py-4 text-muted">
+                                <i class="fas fa-folder-open mb-2" style="font-size: 2rem;"></i><br>
+                                No folders found. Create one to get started.
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

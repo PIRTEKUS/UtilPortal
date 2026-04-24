@@ -26,6 +26,12 @@ def create_app(config_class=Config):
     
     from routes.portal import bp as portal_bp
     app.register_blueprint(portal_bp, url_prefix='/portal')
+    
+    @app.context_processor
+    def inject_app_settings():
+        from models import AppSetting
+        logo_setting = AppSetting.query.filter_by(key='company_logo').first()
+        return dict(app_logo=logo_setting.value if logo_setting else None)
 
     # Main entry point redirects to login for now
     @app.route('/')
