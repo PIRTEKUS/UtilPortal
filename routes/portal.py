@@ -214,9 +214,11 @@ def execute_python_stream(module_id):
 
     def generate():
         import tempfile
+        import shutil
         
         script_to_run = ""
         cwd = os.getcwd()
+        python_executable = sys.executable
         
         try:
             if module.is_python_folder:
@@ -227,16 +229,44 @@ def execute_python_stream(module_id):
                     yield f"data: ERROR: Entry file {entry_file} not found in uploaded zip.\n\n"
                     return
             elif module.custom_code:
-                # Write direct code to a temp file
-                fd, path = tempfile.mkstemp(suffix=".py")
-                with os.fdopen(fd, 'w') as f:
+                # Direct code: create a temporary directory to act as the module folder
+                cwd = tempfile.mkdtemp(prefix=f"module_{module.id}_")
+                script_to_run = os.path.join(cwd, "main.py")
+                with open(script_to_run, 'w') as f:
                     f.write(module.custom_code.replace('\r\n', '\n'))
-                script_to_run = path
+                    
+            # Virtual Environment Logic
+            venv_dir = os.path.join(cwd, 'venv')
+            if os.name == 'nt':
+                venv_python = os.path.join(venv_dir, 'Scripts', 'python.exe')
+                venv_pip = os.path.join(venv_dir, 'Scripts', 'pip.exe')
+            else:
+                venv_python = os.path.join(venv_dir, 'bin', 'python')
+                venv_pip = os.path.join(venv_dir, 'bin', 'pip')
+                
+            if not os.path.exists(venv_dir):
+                yield f"data: [Setup] Creating isolated virtual environment...\n\n"
+                subprocess.run([sys.executable, "-m", "venv", "venv"], cwd=cwd, check=True)
+                
+                req_file = os.path.join(cwd, 'requirements.txt')
+                if not os.path.exists(req_file):
+                    yield f"data: [Setup] Analyzing files to generate requirements.txt...\n\n"
+                    subprocess.run([sys.executable, "-m", "pipreqs.pipreqs", "--force", "."], cwd=cwd, check=False)
+                    
+                if os.path.exists(req_file):
+                    yield f"data: [Setup] Installing dependencies...\n\n"
+                    pip_proc = subprocess.Popen([venv_pip, "install", "-r", "requirements.txt"], cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+                    for line in iter(pip_proc.stdout.readline, ''):
+                        yield f"data: [pip] {line.strip()}\n\n"
+                    pip_proc.wait()
+                    yield f"data: [Setup] Environment ready.\n\n"
+            
+            python_executable = venv_python
             
             yield f"data: Starting execution of module: {module.name}...\n\n"
             
             process = subprocess.Popen(
-                [sys.executable, "-u", script_to_run], 
+                [python_executable, "-u", script_to_run], 
                 cwd=cwd,
                 stdout=subprocess.PIPE, 
                 stderr=subprocess.STDOUT, 
@@ -256,7 +286,8 @@ def execute_python_stream(module_id):
         except Exception as e:
             yield f"data: Execution Failed: {str(e)}\n\n"
         finally:
-            if not module.is_python_folder and module.custom_code and os.path.exists(script_to_run):
-                os.remove(script_to_run)
+            if not module.is_python_folder and module.custom_code and os.path.exists(cwd):
+                # Clean up temp directory for direct code modules
+                shutil.rmtree(cwd, ignore_errors=True)
                 
     return Response(stream_with_context(generate()), mimetype='text/event-stream')
