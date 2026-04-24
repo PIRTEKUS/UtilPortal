@@ -6,54 +6,168 @@
     <div class="col-12 d-flex justify-content-between align-items-center">
         <div>
             <h2 class="fw-bold"><i class="bi bi-gear-fill me-2 text-danger"></i>Admin Portal</h2>
-            <p class="text-muted">Manage system configuration, users, and assigned modules.</p>
+            <p class="text-muted mb-0">Manage system configuration, users, roles, modules, and more.</p>
         </div>
         <a href="{{ url_for('portal.dashboard') }}" class="btn btn-outline-secondary">
-            <i class="bi bi-arrow-left"></i> Back to User Portal
+            <i class="bi bi-arrow-left me-1"></i> Back to User Portal
         </a>
     </div>
 </div>
 
-<div class="col-md-4">
-    <div class="card border-primary shadow text-center h-100">
-        <div class="card-body py-5">
-            <i class="bi bi-people-fill display-3 text-primary mb-3"></i>
-            <h3 class="fw-bold">{{ users_count }}</h3>
-            <h5 class="card-title text-muted">Total Users</h5>
-            <a href="{{ url_for('admin.users') }}" class="btn btn-primary mt-3">Manage Users</a>
+<!-- Stats row -->
+<div class="row g-3 mb-4">
+    <div class="col-md-4">
+        <div class="card border-0 shadow-sm text-center py-3">
+            <div class="card-body">
+                <i class="bi bi-people-fill display-5 text-primary mb-2"></i>
+                <h3 class="fw-bold mb-0">{{ users_count }}</h3>
+                <p class="text-muted mb-0">Total Users</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card border-0 shadow-sm text-center py-3">
+            <div class="card-body">
+                <i class="bi bi-boxes display-5 text-info mb-2"></i>
+                <h3 class="fw-bold mb-0">{{ modules_count }}</h3>
+                <p class="text-muted mb-0">Configured Modules</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card border-0 shadow-sm text-center py-3">
+            <div class="card-body">
+                <i class="bi bi-hdd-rack-fill display-5 text-warning mb-2"></i>
+                <h3 class="fw-bold mb-0">{{ connections_count }}</h3>
+                <p class="text-muted mb-0">Server Connections</p>
+            </div>
         </div>
     </div>
 </div>
 
-<div class="col-md-4">
-    <div class="card border-info shadow text-center h-100">
-        <div class="card-body py-5">
-            <i class="bi bi-boxes display-3 text-info mb-3"></i>
-            <h3 class="fw-bold">{{ modules_count }}</h3>
-            <h5 class="card-title text-muted">Configured Modules</h5>
-            <a href="{{ url_for('admin.modules') }}" class="btn btn-info mt-3">Manage Modules</a>
-        </div>
+<!-- Section links grid -->
+<h5 class="text-muted fw-semibold mb-3 text-uppercase" style="font-size: 0.75rem; letter-spacing: 0.1em;">
+    <i class="bi bi-grid me-1"></i> Administration Sections
+</h5>
+
+<div class="row g-3">
+
+    <div class="col-md-4 col-lg-3">
+        <a href="{{ url_for('admin.users') }}" class="text-decoration-none">
+            <div class="card h-100 border-0 shadow-sm admin-nav-card">
+                <div class="card-body d-flex align-items-center gap-3 py-3">
+                    <div class="admin-nav-icon bg-primary-subtle text-primary">
+                        <i class="bi bi-people-fill"></i>
+                    </div>
+                    <div>
+                        <div class="fw-semibold">Users</div>
+                        <small class="text-muted">Manage users &amp; permissions</small>
+                    </div>
+                </div>
+            </div>
+        </a>
     </div>
+
+    <div class="col-md-4 col-lg-3">
+        <a href="{{ url_for('admin.roles') }}" class="text-decoration-none">
+            <div class="card h-100 border-0 shadow-sm admin-nav-card">
+                <div class="card-body d-flex align-items-center gap-3 py-3">
+                    <div class="admin-nav-icon bg-success-subtle text-success">
+                        <i class="bi bi-person-badge-fill"></i>
+                    </div>
+                    <div>
+                        <div class="fw-semibold">Roles</div>
+                        <small class="text-muted">Create &amp; configure roles</small>
+                    </div>
+                </div>
+            </div>
+        </a>
+    </div>
+
+    <div class="col-md-4 col-lg-3">
+        <a href="{{ url_for('admin.folders') }}" class="text-decoration-none">
+            <div class="card h-100 border-0 shadow-sm admin-nav-card">
+                <div class="card-body d-flex align-items-center gap-3 py-3">
+                    <div class="admin-nav-icon bg-warning-subtle text-warning">
+                        <i class="bi bi-folder-fill"></i>
+                    </div>
+                    <div>
+                        <div class="fw-semibold">Folders</div>
+                        <small class="text-muted">Organize modules in folders</small>
+                    </div>
+                </div>
+            </div>
+        </a>
+    </div>
+
+    <div class="col-md-4 col-lg-3">
+        <a href="{{ url_for('admin.modules') }}" class="text-decoration-none">
+            <div class="card h-100 border-0 shadow-sm admin-nav-card">
+                <div class="card-body d-flex align-items-center gap-3 py-3">
+                    <div class="admin-nav-icon bg-info-subtle text-info">
+                        <i class="bi bi-hdd-network-fill"></i>
+                    </div>
+                    <div>
+                        <div class="fw-semibold">Modules</div>
+                        <small class="text-muted">Create &amp; edit modules</small>
+                    </div>
+                </div>
+            </div>
+        </a>
+    </div>
+
+    <div class="col-md-4 col-lg-3">
+        <a href="{{ url_for('admin.connections') }}" class="text-decoration-none">
+            <div class="card h-100 border-0 shadow-sm admin-nav-card">
+                <div class="card-body d-flex align-items-center gap-3 py-3">
+                    <div class="admin-nav-icon bg-danger-subtle text-danger">
+                        <i class="bi bi-hdd-rack-fill"></i>
+                    </div>
+                    <div>
+                        <div class="fw-semibold">Connections</div>
+                        <small class="text-muted">SQL Server &amp; DB connections</small>
+                    </div>
+                </div>
+            </div>
+        </a>
+    </div>
+
+    <div class="col-md-4 col-lg-3">
+        <a href="{{ url_for('admin.settings') }}" class="text-decoration-none">
+            <div class="card h-100 border-0 shadow-sm admin-nav-card">
+                <div class="card-body d-flex align-items-center gap-3 py-3">
+                    <div class="admin-nav-icon bg-secondary-subtle text-secondary">
+                        <i class="bi bi-sliders"></i>
+                    </div>
+                    <div>
+                        <div class="fw-semibold">Settings</div>
+                        <small class="text-muted">Branding, logo &amp; colors</small>
+                    </div>
+                </div>
+            </div>
+        </a>
+    </div>
+
 </div>
 
-<div class="col-md-4">
-    <div class="card border-warning shadow text-center h-100">
-        <div class="card-body py-5">
-            <i class="bi bi-hdd-rack-fill display-3 text-warning mb-3"></i>
-            <h3 class="fw-bold">{{ connections_count }}</h3>
-            <h5 class="card-title text-muted">Server Connections</h5>
-            <a href="{{ url_for('admin.connections') }}" class="btn btn-warning mt-3">Manage Connections</a>
-        </div>
-    </div>
-</div>
-<div class="card border-info shadow text-center h-100">
-    <div class="card-body py-5">
-        <i class="bi bi-boxes display-3 text-info mb-3"></i>
-        <h3 class="fw-bold">{{ modules_count }}</h3>
-        <h5 class="card-title text-muted">Configured Modules</h5>
-        <a href="{{ url_for('admin.modules') }}" class="btn btn-info mt-3">Manage Modules</a>
-    </div>
-</div>
-</div>
-</div>
+<style>
+    .admin-nav-card {
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+        cursor: pointer;
+    }
+    .admin-nav-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 6px 20px rgba(0,0,0,0.12) !important;
+    }
+    .admin-nav-icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.4rem;
+        flex-shrink: 0;
+    }
+</style>
 {% endblock %}

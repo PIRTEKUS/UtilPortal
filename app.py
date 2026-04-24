@@ -31,11 +31,16 @@ def create_app(config_class=Config):
     def inject_app_settings():
         try:
             from models import AppSetting
-            logo_setting = AppSetting.query.filter_by(key='company_logo').first()
-            return dict(app_logo=logo_setting.value if logo_setting else None)
+            def gs(key):
+                s = AppSetting.query.filter_by(key=key).first()
+                return s.value if s else None
+            return dict(
+                app_logo=gs('company_logo'),
+                navbar_bg_color=gs('navbar_bg_color') or '#ffffff',
+                navbar_font_color=gs('navbar_font_color') or '#212529',
+            )
         except Exception:
-            # If the table doesn't exist yet or DB is locked, don't crash the whole app
-            return dict(app_logo=None)
+            return dict(app_logo=None, navbar_bg_color='#ffffff', navbar_font_color='#212529')
 
     # Main entry point redirects to login for now
     @app.route('/')

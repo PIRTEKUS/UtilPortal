@@ -365,7 +365,7 @@ def settings():
 
     if request.method == 'POST':
         # Save text fields
-        for field in ['company_name', 'company_tagline', 'company_email']:
+        for field in ['company_name', 'company_tagline', 'company_email', 'navbar_bg_color', 'navbar_font_color']:
             val = request.form.get(field, '').strip()
             save_setting(field, val)
 
@@ -387,4 +387,6 @@ def settings():
         company_name=get_setting('company_name') or '',
         company_tagline=get_setting('company_tagline') or '',
         company_email=get_setting('company_email') or '',
+        navbar_bg_color=get_setting('navbar_bg_color') or '#ffffff',
+        navbar_font_color=get_setting('navbar_font_color') or '#212529',
     )

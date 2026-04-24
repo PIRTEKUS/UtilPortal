@@ -71,10 +71,101 @@
 
     </div>
 
+    <!-- Navbar Appearance Card -->
+    <div class="row g-4 mt-1">
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-header bg-light fw-semibold">
+                    <i class="fas fa-paint-brush me-2 text-primary"></i>Navigation Bar Appearance
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small mb-3">Customize the top navigation bar to match your logo and brand colors.</p>
+                    <div class="row g-4">
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Background Color</label>
+                            <div class="d-flex align-items-center gap-3">
+                                <input type="color" class="form-control form-control-color" name="navbar_bg_color"
+                                    value="{{ navbar_bg_color or '#ffffff' }}" id="navbarBgPicker" style="width:56px; height:40px;">
+                                <input type="text" class="form-control form-control-sm font-monospace" id="navbarBgHex"
+                                    value="{{ navbar_bg_color or '#ffffff' }}" maxlength="7" placeholder="#ffffff">
+                            </div>
+                            <div class="form-text">Currently: <span id="bgPreviewLabel">{{ navbar_bg_color or '#ffffff' }}</span></div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Text / Link Color</label>
+                            <div class="d-flex align-items-center gap-3">
+                                <input type="color" class="form-control form-control-color" name="navbar_font_color"
+                                    value="{{ navbar_font_color or '#212529' }}" id="navbarFontPicker" style="width:56px; height:40px;">
+                                <input type="text" class="form-control form-control-sm font-monospace" id="navbarFontHex"
+                                    value="{{ navbar_font_color or '#212529' }}" maxlength="7" placeholder="#212529">
+                            </div>
+                            <div class="form-text">Currently: <span id="fontPreviewLabel">{{ navbar_font_color or '#212529' }}</span></div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Live Preview</label>
+                            <div id="navbarPreview" class="rounded px-3 py-2 d-flex align-items-center justify-content-between"
+                                style="background-color: {{ navbar_bg_color or '#ffffff' }}; border: 1px solid #dee2e6;">
+                                <span id="previewLogo" class="fw-bold" style="color: {{ navbar_font_color or '#212529' }}; font-size: 1.1rem;">
+                                    {% if logo %}
+                                    <img src="{{ url_for('static', filename='uploads/' + logo) }}" alt="Logo" style="max-height:28px;">
+                                    {% else %}
+                                    UtilPortal
+                                    {% endif %}
+                                </span>
+                                <span style="color: {{ navbar_font_color or '#212529' }}; font-size: 0.9rem;">
+                                    <i class="bi bi-person-circle me-1"></i> user@company.com
+                                </span>
+                            </div>
+                            <div class="form-text">Updates as you pick colors.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="mt-4 text-end">
         <button type="submit" class="btn btn-primary px-5">
             <i class="fas fa-save me-2"></i>Save Settings
         </button>
     </div>
 </form>
+
+{% block scripts %}
+<script>
+    function syncColorInputs(picker, hex, bgLabel) {
+        picker.addEventListener('input', function () {
+            hex.value = this.value;
+            bgLabel.textContent = this.value;
+            updatePreview();
+        });
+        hex.addEventListener('input', function () {
+            if (/^#[0-9A-Fa-f]{6}$/.test(this.value)) {
+                picker.value = this.value;
+                bgLabel.textContent = this.value;
+                updatePreview();
+            }
+        });
+    }
+
+    function updatePreview() {
+        const bg = document.getElementById('navbarBgPicker').value;
+        const font = document.getElementById('navbarFontPicker').value;
+        const preview = document.getElementById('navbarPreview');
+        preview.style.backgroundColor = bg;
+        preview.querySelectorAll('span').forEach(s => s.style.color = font);
+    }
+
+    syncColorInputs(
+        document.getElementById('navbarBgPicker'),
+        document.getElementById('navbarBgHex'),
+        document.getElementById('bgPreviewLabel')
+    );
+    syncColorInputs(
+        document.getElementById('navbarFontPicker'),
+        document.getElementById('navbarFontHex'),
+        document.getElementById('fontPreviewLabel')
+    );
+</script>
+{% endblock %}
 {% endblock %}

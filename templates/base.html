@@ -15,7 +15,21 @@
 </head>
 
 <body>
-    <nav class="navbar navbar-expand-lg navbar-light bg-white border-bottom border-secondary mb-4">
+    <style>
+        .app-navbar .nav-link,
+        .app-navbar .navbar-brand,
+        .app-navbar .dropdown-toggle {
+            color: {{ navbar_font_color }} !important;
+        }
+        .app-navbar .nav-link:hover {
+            opacity: 0.75;
+        }
+        .app-navbar .navbar-toggler-icon {
+            filter: {% if navbar_font_color == '#ffffff' or navbar_font_color == '#fff' %}invert(1){% else %}none{% endif %};
+        }
+    </style>
+    <nav class="app-navbar navbar navbar-expand-lg border-bottom mb-4"
+         style="background-color: {{ navbar_bg_color }};">
         <div class="container-fluid">
             <a class="navbar-brand fw-bold" href="{{ url_for('auth.login') }}">
                 {% if app_logo %}
