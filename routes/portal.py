@@ -266,15 +266,37 @@ def execute_python_stream(module_id):
             if not os.path.exists(venv_dir):
                 yield f"data: [Setup] Creating isolated virtual environment...\n\n"
                 subprocess.run([sys.executable, "-m", "venv", "venv"], cwd=cwd, check=True)
-                
+
                 req_file = os.path.join(cwd, 'requirements.txt')
                 if not os.path.exists(req_file):
-                    yield f"data: [Setup] Analyzing files to generate requirements.txt...\n\n"
-                    subprocess.run([sys.executable, "-m", "pipreqs.pipreqs", "--force", "."], cwd=cwd, check=False)
-                    
+                    yield f"data: [Setup] No requirements.txt found. Scanning imports to generate one...\n\n"
+                    # Try pipreqs via its console_scripts entry point first, fallback to -m
+                    pipreqs_bin = os.path.join(venv_dir,
+                        'Scripts' if os.name == 'nt' else 'bin', 'pipreqs')
+                    pipreqs_cmd = [pipreqs_bin, "--force", "--ignore", "venv", "."] \
+                        if os.path.exists(pipreqs_bin) \
+                        else [sys.executable, "-m", "pipreqs", "--force", "--ignore", "venv", "."]
+
+                    # First install pipreqs into the venv so we can use it
+                    subprocess.run([venv_pip, "install", "pipreqs"], cwd=cwd,
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+                    req_proc = subprocess.Popen(pipreqs_cmd, cwd=cwd,
+                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+                    for line in iter(req_proc.stdout.readline, ''):
+                        yield f"data: [pipreqs] {line.strip()}\n\n"
+                    req_proc.wait()
+
+                    if os.path.exists(req_file):
+                        yield f"data: [Setup] requirements.txt generated successfully.\n\n"
+                    else:
+                        yield f"data: [Setup] WARNING: Could not auto-generate requirements.txt. Creating an empty one.\n\n"
+                        open(req_file, 'w').close()
+
                 if os.path.exists(req_file):
                     yield f"data: [Setup] Installing dependencies...\n\n"
-                    pip_proc = subprocess.Popen([venv_pip, "install", "-r", "requirements.txt"], cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+                    pip_proc = subprocess.Popen([venv_pip, "install", "-r", "requirements.txt"],
+                        cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
                     for line in iter(pip_proc.stdout.readline, ''):
                         yield f"data: [pip] {line.strip()}\n\n"
                     pip_proc.wait()

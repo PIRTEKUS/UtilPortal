@@ -60,6 +60,23 @@ def create_connection():
     flash('Server Connection created successfully.', 'success')
     return redirect(url_for('admin.connections'))
 
+@bp.route('/connections/<int:conn_id>/edit', methods=['POST'])
+@login_required
+@admin_required
+def edit_connection(conn_id):
+    conn = ServerConnection.query.get_or_404(conn_id)
+    conn.name = request.form.get('name')
+    conn.server_type = request.form.get('server_type')
+    conn.host = request.form.get('host')
+    conn.username = request.form.get('username')
+    # Only update password if a new one was provided
+    new_password = request.form.get('password', '').strip()
+    if new_password:
+        conn.password = new_password
+    db.session.commit()
+    flash(f'Connection "{conn.name}" updated successfully.', 'success')
+    return redirect(url_for('admin.connections'))
+
 @bp.route('/api/connections/<int:conn_id>/databases')
 @login_required
 @admin_required
