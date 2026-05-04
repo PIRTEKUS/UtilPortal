@@ -50,8 +50,22 @@
                             param.required %}required{% endif %}>
 
                         {% elif param.type == 'datetime-local' %}
-                        <input type="datetime-local" class="form-control" id="{{ param.name }}" name="{{ param.name }}" {% if
-                            param.required %}required{% endif %}>
+                        <input type="hidden" id="{{ param.name }}" name="{{ param.name }}">
+                        <div class="row g-2">
+                            <div class="col-md-6">
+                                <label class="form-label small text-muted"><i class="bi bi-calendar3 me-1"></i>Date</label>
+                                <input type="date" class="form-control" id="{{ param.name }}_date"
+                                    {% if param.required %}required{% endif %}
+                                    onchange="combineDatetime('{{ param.name }}')">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label small text-muted"><i class="bi bi-clock me-1"></i>Time</label>
+                                <input type="time" class="form-control" id="{{ param.name }}_time"
+                                    step="1"
+                                    {% if param.required %}required{% endif %}
+                                    onchange="combineDatetime('{{ param.name }}')">
+                            </div>
+                        </div>
 
                         {% elif param.type == 'number' %}
                         <input type="number" class="form-control" id="{{ param.name }}" name="{{ param.name }}" {% if
@@ -113,8 +127,28 @@
 
 {% block scripts %}
 <script>
+    // Combine separate date & time pickers into the hidden datetime-local field
+    function combineDatetime(paramName) {
+        var dateVal = document.getElementById(paramName + '_date').value;
+        var timeVal = document.getElementById(paramName + '_time').value;
+        var hidden = document.getElementById(paramName);
+        if (dateVal && timeVal) {
+            hidden.value = dateVal + 'T' + timeVal;
+        } else if (dateVal) {
+            hidden.value = dateVal + 'T00:00:00';
+        } else {
+            hidden.value = '';
+        }
+    }
+
     // Add simple loading state to button on submit
     document.getElementById('moduleForm').addEventListener('submit', function () {
+        // Ensure all datetime combos are synced before submitting
+        document.querySelectorAll('input[type="hidden"][id]').forEach(function(hidden) {
+            var dateInput = document.getElementById(hidden.id + '_date');
+            if (dateInput) combineDatetime(hidden.id);
+        });
+
         var btn = document.getElementById('confirmSubmitBtn');
         btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Executing...';
         btn.disabled = true;

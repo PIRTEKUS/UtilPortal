@@ -1,4 +1,5 @@
 import json
+from datetime import datetime as dt, date as dt_date
 import os
 import sys
 import subprocess
@@ -180,10 +181,32 @@ def execute(module_id):
         submitted_params = {}
         for param in parameters:
             p_name = param.get('name')
-            if param.get('type') == 'checkbox':
-                submitted_params[p_name] = 1 if request.form.get(p_name) else 0
+            p_type = param.get('type', 'text')
+            raw_value = request.form.get(p_name)
+            
+            if p_type == 'checkbox':
+                submitted_params[p_name] = 1 if raw_value else 0
+            elif p_type == 'datetime-local' and raw_value:
+                # Convert "2026-05-04T11:44" to a Python datetime object
+                # so pyodbc sends it as a typed datetime parameter to SQL Server
+                try:
+                    submitted_params[p_name] = dt.fromisoformat(raw_value)
+                except ValueError:
+                    submitted_params[p_name] = raw_value
+            elif p_type == 'date' and raw_value:
+                # Convert "2026-05-04" to a Python date object
+                try:
+                    submitted_params[p_name] = dt_date.fromisoformat(raw_value)
+                except ValueError:
+                    submitted_params[p_name] = raw_value
+            elif p_type == 'number' and raw_value:
+                # Send numeric types as actual numbers
+                try:
+                    submitted_params[p_name] = int(raw_value) if '.' not in raw_value else float(raw_value)
+                except ValueError:
+                    submitted_params[p_name] = raw_value
             else:
-                submitted_params[p_name] = request.form.get(p_name)
+                submitted_params[p_name] = raw_value
             
         result_sets = []
             
@@ -229,7 +252,7 @@ def execute(module_id):
                 log_msg += f' Returned {len(result_sets)} result set(s).'
                 
             log = AuditLog(user_id=current_user.id, module_id=module.id, 
-                           parameters_used=json.dumps(submitted_params), status='success', message=log_msg)
+                           parameters_used=json.dumps(submitted_params, default=str), status='success', message=log_msg)
             db.session.add(log)
             db.session.commit()
             
@@ -239,7 +262,7 @@ def execute(module_id):
         except Exception as e:
             error_msg = str(e)
             log = AuditLog(user_id=current_user.id, module_id=module.id, 
-                           parameters_used=json.dumps(submitted_params), status='error', message=error_msg)
+                           parameters_used=json.dumps(submitted_params, default=str), status='error', message=error_msg)
             db.session.add(log)
             db.session.commit()
             flash(f'Error executing module: {error_msg}', 'danger')
