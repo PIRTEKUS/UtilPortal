@@ -151,16 +151,47 @@ def _parse_submitted_params(parameters, form):
             submitted[p_name] = raw_value
     return submitted
 
+def _build_sql_call(sp_name, parameters, submitted_params, object_type='sp'):
+    """Build a human-readable SQL EXEC statement for diagnostics / SSMS testing."""
+    if object_type == 'job':
+        return f"EXEC msdb.dbo.sp_start_job N'{sp_name}'"
+    
+    if not parameters:
+        return f"EXEC {sp_name}"
+    
+    parts = []
+    for p in parameters:
+        val = submitted_params.get(p['name'])
+        if val is None:
+            parts.append('NULL')
+        elif isinstance(val, (int, float)):
+            parts.append(str(val))
+        else:
+            # Quote strings/datetimes
+            parts.append(f"'{val}'")
+    
+    param_str = ', '.join(parts)
+    return f"EXEC {sp_name} {param_str}"
+
 
 def _execute_sp_sync(module, connection_model, parameters, submitted_params):
-    """Execute a stored procedure synchronously and return (result_sets, error_msg)."""
+    """Execute a stored procedure synchronously.
+    Returns (result_sets, error_msg, sql_call)."""
     result_sets = []
     error_msg = None
+    sql_call = _build_sql_call(module.stored_proc_name, parameters, submitted_params, module.object_type)
     
     try:
-        conn_str = f"DRIVER={{ODBC Driver 18 for SQL Server}};SERVER={connection_model.host};UID={connection_model.username};PWD={connection_model.password};Encrypt=Optional;TrustServerCertificate=yes;"
+        conn_str = (
+            f"DRIVER={{ODBC Driver 18 for SQL Server}};"
+            f"SERVER={connection_model.host};"
+            f"UID={connection_model.username};"
+            f"PWD={connection_model.password};"
+            f"Encrypt=Optional;TrustServerCertificate=yes;"
+            f"Connection Timeout=30;"
+        )
         if module.database_name:
-            conn_str += f";DATABASE={module.database_name}"
+            conn_str += f"DATABASE={module.database_name};"
             
         odbc_conn = pyodbc.connect(conn_str, autocommit=True)
         cursor = odbc_conn.cursor()
@@ -192,7 +223,7 @@ def _execute_sp_sync(module, connection_model, parameters, submitted_params):
     except Exception as e:
         error_msg = str(e)
     
-    return result_sets, error_msg
+    return result_sets, error_msg, sql_call
 
 
 def _run_sp_background(app, log_id, module_id, connection_id, db_name, object_type,
@@ -210,17 +241,23 @@ def _run_sp_background(app, log_id, module_id, connection_id, db_name, object_ty
             db.session.commit()
             return
         
-        result_sets, error_msg = _execute_sp_sync(module, connection_model, parameters, submitted_params)
+        # Store the SQL call being executed so users can see / reproduce it
+        sql_call = _build_sql_call(sp_name, parameters, submitted_params, object_type)
+        log.message = f'Executing: {sql_call}'
+        db.session.commit()
+        
+        result_sets, error_msg, _ = _execute_sp_sync(module, connection_model, parameters, submitted_params)
         
         log.end_time = dt.now(tz.utc)
         if error_msg:
             log.status = 'error'
-            log.message = error_msg
+            log.message = f'SQL: {sql_call}\n\nError: {error_msg}'
         else:
             log.status = 'success'
-            log_msg = 'Executed successfully.'
+            log_msg = f'Executed successfully.'
             if result_sets:
                 log_msg += f' Returned {len(result_sets)} result set(s).'
+            log_msg += f'\n\nSQL: {sql_call}'
             log.message = log_msg
             if result_sets:
                 log.result_data = json.dumps(result_sets, default=str)
@@ -317,10 +354,11 @@ def execute(module_id):
         
         if run_in_background:
             # --- BACKGROUND EXECUTION ---
+            sql_preview = _build_sql_call(module.stored_proc_name, parameters, submitted_params, module.object_type)
             log = AuditLog(
                 user_id=current_user.id, module_id=module.id,
                 parameters_used=json.dumps(submitted_params, default=str),
-                status='running', message='Executing in background...'
+                status='running', message=f'Executing in background...\n\nSQL: {sql_preview}'
             )
             db.session.add(log)
             db.session.commit()
@@ -343,7 +381,7 @@ def execute(module_id):
             
         try:
             if connection_model and connection_model.server_type == 'sqlserver':
-                result_sets, error_msg = _execute_sp_sync(module, connection_model, parameters, submitted_params)
+                result_sets, error_msg, sql_call = _execute_sp_sync(module, connection_model, parameters, submitted_params)
                 
                 if error_msg:
                     raise Exception(error_msg)

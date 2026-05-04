@@ -74,6 +74,7 @@
             <table class="table table-hover mb-0 align-middle">
                 <thead class="table-light">
                     <tr>
+                        <th style="width:40px"></th>
                         <th style="width:60px">#</th>
                         <th>Status</th>
                         <th>Module</th>
@@ -86,7 +87,11 @@
                 </thead>
                 <tbody>
                     {% for log in logs %}
-                    <tr class="{% if log.status == 'running' %}table-warning{% elif log.status == 'error' %}table-danger{% endif %}">
+                    <tr class="{% if log.status == 'running' %}table-warning{% elif log.status == 'error' %}table-danger{% endif %}"
+                        style="cursor:pointer;" data-bs-toggle="collapse" data-bs-target="#detail-{{ log.id }}">
+                        <td class="text-center text-muted">
+                            <i class="bi bi-chevron-down small"></i>
+                        </td>
                         <td class="text-muted small">{{ log.id }}</td>
                         <td>
                             {% if log.status == 'running' %}
@@ -130,10 +135,11 @@
                                 —
                             {% endif %}
                         </td>
-                        <td class="small text-muted" style="max-width:250px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="{{ log.message or '' }}">
-                            {{ log.message or '—' }}
+                        <td class="small text-muted" style="max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"
+                            title="{{ log.message.split('\n')[0] if log.message else '' }}">
+                            {{ log.message.split('\n')[0] if log.message else '—' }}
                         </td>
-                        <td class="text-end">
+                        <td class="text-end" onclick="event.stopPropagation();">
                             {% if log.result_data %}
                             <a href="{{ url_for('portal.view_execution_results', log_id=log.id) }}" class="btn btn-sm btn-outline-success">
                                 <i class="bi bi-table me-1"></i>View
@@ -147,9 +153,53 @@
                             {% endif %}
                         </td>
                     </tr>
+                    <!-- Expandable detail row -->
+                    <tr class="collapse" id="detail-{{ log.id }}">
+                        <td colspan="9" class="bg-light p-0">
+                            <div class="p-3">
+                                <div class="row">
+                                    <!-- SQL Call / Message -->
+                                    <div class="col-md-7">
+                                        <label class="form-label small fw-bold text-muted mb-1">
+                                            <i class="bi bi-terminal me-1"></i>Execution Details / SQL Call
+                                        </label>
+                                        <div class="position-relative">
+                                            <pre class="bg-dark text-light p-3 rounded small mb-0" style="max-height:180px; overflow-y:auto; white-space:pre-wrap; word-break:break-all;" id="sql-{{ log.id }}">{{ log.message or 'No details available.' }}</pre>
+                                            <button class="btn btn-sm btn-outline-light position-absolute top-0 end-0 m-2"
+                                                    onclick="event.stopPropagation(); copySQL({{ log.id }})" title="Copy to clipboard">
+                                                <i class="bi bi-clipboard"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <!-- Parameters Used -->
+                                    <div class="col-md-5">
+                                        <label class="form-label small fw-bold text-muted mb-1">
+                                            <i class="bi bi-sliders me-1"></i>Parameters Used
+                                        </label>
+                                        {% if log.parameters_used %}
+                                        {% set params = log.parameters_used | tojson | safe %}
+                                        <pre class="bg-dark text-light p-3 rounded small mb-0" style="max-height:180px; overflow-y:auto; white-space:pre-wrap;">{{ log.parameters_used }}</pre>
+                                        {% else %}
+                                        <div class="text-muted small fst-italic">No parameters</div>
+                                        {% endif %}
+                                        
+                                        <!-- Connection info -->
+                                        {% if log.module and log.module.stored_proc_name %}
+                                        <div class="mt-2">
+                                            <span class="badge bg-secondary me-1">SP: {{ log.module.stored_proc_name }}</span>
+                                            {% if log.module.database_name %}
+                                            <span class="badge bg-secondary">DB: {{ log.module.database_name }}</span>
+                                            {% endif %}
+                                        </div>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
                     {% else %}
                     <tr>
-                        <td colspan="8" class="text-center py-5 text-muted">
+                        <td colspan="9" class="text-center py-5 text-muted">
                             <i class="bi bi-inbox display-4 d-block mb-2"></i>
                             No execution history yet. Run a module to see your history here.
                         </td>
@@ -169,6 +219,34 @@
 
 {% block scripts %}
 <script>
+    // Copy SQL to clipboard
+    function copySQL(logId) {
+        var pre = document.getElementById('sql-' + logId);
+        if (!pre) return;
+        var text = pre.textContent;
+        
+        // Try to extract just the SQL part if the message has our format
+        var sqlMatch = text.match(/SQL:\s*(EXEC\s+.+)/s);
+        if (sqlMatch) {
+            text = sqlMatch[1].trim();
+        } else if (text.startsWith('Executing: ')) {
+            text = text.replace('Executing: ', '').trim();
+        }
+        
+        navigator.clipboard.writeText(text).then(function() {
+            // Brief visual feedback
+            var btn = pre.parentElement.querySelector('button');
+            var origHTML = btn.innerHTML;
+            btn.innerHTML = '<i class="bi bi-check-lg"></i>';
+            btn.classList.replace('btn-outline-light', 'btn-success');
+            setTimeout(function() {
+                btn.innerHTML = origHTML;
+                btn.classList.replace('btn-success', 'btn-outline-light');
+            }, 1500);
+        });
+    }
+
+    // Auto-refresh toggle
     let refreshInterval = null;
     const toggle = document.getElementById('autoRefreshToggle');
     const label  = document.getElementById('refresh-label');
