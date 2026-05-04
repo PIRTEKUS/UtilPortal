@@ -21,6 +21,8 @@ with app.app_context():
         "ALTER TABLE module ADD COLUMN python_entry_file VARCHAR(255)",
         "ALTER TABLE audit_log ADD COLUMN end_time DATETIME NULL",
         "ALTER TABLE audit_log ADD COLUMN pid INT NULL",
+        "ALTER TABLE audit_log ADD COLUMN result_data TEXT NULL",
+        "ALTER TABLE audit_log ADD COLUMN notified BOOLEAN DEFAULT 0",
     ]
 
     for cmd in columns_to_add:

@@ -124,6 +124,36 @@
         </div>
     </div>
 
+    <!-- Data Retention Card -->
+    <div class="row g-4 mt-1">
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-header bg-light fw-semibold">
+                    <i class="bi bi-database-gear me-2 text-primary"></i>Data Retention
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small mb-3">Configure how long execution result data is stored. Activity logs are kept indefinitely, but the result data (which can be large) is automatically purged after this period.</p>
+                    <div class="row g-4">
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Keep Results For (Days)</label>
+                            <input type="number" class="form-control" name="results_retention_days"
+                                value="{{ results_retention_days }}" min="1" max="365" placeholder="7">
+                            <div class="form-text">Default: 7 days. Users will see a warning about this on their Executions page.</div>
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label fw-semibold">How it Works</label>
+                            <div class="alert alert-info py-2 mb-0 small">
+                                <i class="bi bi-info-circle me-1"></i>
+                                <strong>Activity logs</strong> (who ran what, when, status) are kept <strong>forever</strong>.<br>
+                                <strong>Result data</strong> (the actual SP output tables) is auto-deleted after the configured period to save disk space.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="mt-4 text-end">
         <button type="submit" class="btn btn-primary px-5">
             <i class="fas fa-save me-2"></i>Save Settings

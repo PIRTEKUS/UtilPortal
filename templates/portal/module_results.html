@@ -17,6 +17,9 @@
                         <a href="{{ url_for('portal.execute', module_id=module.id) }}" class="btn btn-sm btn-outline-primary me-2">
                             <i class="bi bi-arrow-repeat me-1"></i>Run Again
                         </a>
+                        <a href="{{ url_for('portal.my_executions') }}" class="btn btn-sm btn-outline-info me-2">
+                            <i class="bi bi-clock-history me-1"></i>My Executions
+                        </a>
                         <a href="{{ url_for('portal.dashboard') }}" class="btn btn-sm btn-outline-secondary">
                             <i class="bi bi-list me-1"></i>Dashboard
                         </a>
@@ -85,7 +88,7 @@
             XLSX.utils.book_append_sheet(wb, ws, sheetName);
         });
         
-        var moduleName = "{{ module.name|replace(' ', '_')|replace('\"', '')|replace('\'', '') }}";
+        var moduleName = "{{ module.name|replace(' ', '_')|replace('\"', '')|replace(\"'\", '') }}";
         var dateStr = new Date().toISOString().slice(0,10);
         var filename = moduleName + "_Results_" + dateStr + ".xlsx";
         

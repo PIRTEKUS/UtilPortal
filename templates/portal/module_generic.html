@@ -16,6 +16,9 @@
 
                 <form action="{{ url_for('portal.execute', module_id=module.id) }}" method="post"
                     class="needs-validation" id="moduleForm">
+                    <!-- Hidden field set by JS before submission -->
+                    <input type="hidden" name="background" id="backgroundField" value="0">
+
                     <!-- Dynamic Parameters rendering -->
                     <h5 class="mb-3">Required Parameters</h5>
 
@@ -105,14 +108,24 @@
                                         aria-label="Close"></button>
                                 </div>
                                 <div class="modal-body text-light">
-                                    Are you sure you want to execute <strong>{{ module.name }}</strong> with the
-                                    provided parameters?
+                                    <p>Are you sure you want to execute <strong>{{ module.name }}</strong> with the
+                                    provided parameters?</p>
+                                    <div class="alert alert-info bg-dark border-info py-2 small mb-0">
+                                        <i class="bi bi-info-circle me-1"></i>
+                                        <strong>Execute & Wait</strong> keeps you on this page until results are ready.<br>
+                                        <strong>Execute in Background</strong> returns you to the dashboard — you'll get a notification when it's done.
+                                    </div>
                                 </div>
                                 <div class="modal-footer border-secondary">
                                     <button type="button" class="btn btn-secondary"
                                         data-bs-dismiss="modal">Cancel</button>
-                                    <button type="submit" class="btn btn-danger" id="confirmSubmitBtn">Yes,
-                                        Execute</button>
+                                    <button type="submit" class="btn btn-outline-primary" id="bgSubmitBtn"
+                                        onclick="document.getElementById('backgroundField').value='1';">
+                                        <i class="bi bi-arrow-left-right me-1"></i>Run in Background
+                                    </button>
+                                    <button type="submit" class="btn btn-danger" id="confirmSubmitBtn">
+                                        <i class="bi bi-hourglass-split me-1"></i>Execute & Wait
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -149,9 +162,18 @@
             if (dateInput) combineDatetime(hidden.id);
         });
 
-        var btn = document.getElementById('confirmSubmitBtn');
-        btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Executing...';
-        btn.disabled = true;
+        var isBackground = document.getElementById('backgroundField').value === '1';
+        if (isBackground) {
+            var btn = document.getElementById('bgSubmitBtn');
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Submitting...';
+            btn.disabled = true;
+            document.getElementById('confirmSubmitBtn').disabled = true;
+        } else {
+            var btn = document.getElementById('confirmSubmitBtn');
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Executing...';
+            btn.disabled = true;
+            document.getElementById('bgSubmitBtn').disabled = true;
+        }
     });
 </script>
 {% endblock %}

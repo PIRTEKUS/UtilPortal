@@ -1,11 +1,12 @@
 import json
-from datetime import datetime as dt, date as dt_date
+from datetime import datetime as dt, date as dt_date, timezone as tz
 import os
 import sys
 import subprocess
-from flask import Blueprint, render_template, abort, request, flash, redirect, url_for, Response, stream_with_context
+import threading
+from flask import Blueprint, render_template, abort, request, flash, redirect, url_for, Response, stream_with_context, jsonify, current_app
 from flask_login import login_required, current_user
-from models import Module, AuditLog, ServerConnection, Folder, db
+from models import Module, AuditLog, ServerConnection, Folder, AppSetting, db
 import pyodbc
 
 bp = Blueprint('portal', __name__)
@@ -63,9 +64,35 @@ def build_tree(modules):
     # Wait, simpler logic: just pass the allowed_modules and let Jinja group them by folder.
     pass
 
+def cleanup_old_results():
+    """Purge result_data from AuditLog entries older than the configured retention period.
+    The AuditLog row itself is preserved forever — only the bulky JSON is cleared."""
+    try:
+        setting = AppSetting.query.filter_by(key='results_retention_days').first()
+        days = int(setting.value) if setting and setting.value else 7
+        
+        from datetime import timedelta
+        cutoff = dt.now(tz.utc) - timedelta(days=days)
+        
+        stale = AuditLog.query.filter(
+            AuditLog.timestamp < cutoff,
+            AuditLog.result_data.isnot(None)
+        ).all()
+        
+        for log in stale:
+            log.result_data = None
+        
+        if stale:
+            db.session.commit()
+    except Exception:
+        db.session.rollback()
+
 @bp.route('/dashboard')
 @login_required
 def dashboard():
+    # Opportunistically clean up old results on dashboard load
+    cleanup_old_results()
+    
     modules = get_user_allowed_modules(current_user)
     
     # For a simple tree diagram in the template, we can pass all folders
@@ -93,6 +120,113 @@ def dashboard():
             check_folder(f)
     
     return render_template('portal/dashboard.html', modules=modules, folders=all_folders, allowed_module_ids=list(allowed_module_ids), allowed_folder_ids=list(allowed_folder_ids))
+
+
+def _parse_submitted_params(parameters, form):
+    """Extract and type-convert submitted form parameters."""
+    submitted = {}
+    for param in parameters:
+        p_name = param.get('name')
+        p_type = param.get('type', 'text')
+        raw_value = form.get(p_name)
+        
+        if p_type == 'checkbox':
+            submitted[p_name] = 1 if raw_value else 0
+        elif p_type == 'datetime-local' and raw_value:
+            try:
+                submitted[p_name] = dt.fromisoformat(raw_value)
+            except ValueError:
+                submitted[p_name] = raw_value
+        elif p_type == 'date' and raw_value:
+            try:
+                submitted[p_name] = dt_date.fromisoformat(raw_value)
+            except ValueError:
+                submitted[p_name] = raw_value
+        elif p_type == 'number' and raw_value:
+            try:
+                submitted[p_name] = int(raw_value) if '.' not in raw_value else float(raw_value)
+            except ValueError:
+                submitted[p_name] = raw_value
+        else:
+            submitted[p_name] = raw_value
+    return submitted
+
+
+def _execute_sp_sync(module, connection_model, parameters, submitted_params):
+    """Execute a stored procedure synchronously and return (result_sets, error_msg)."""
+    result_sets = []
+    error_msg = None
+    
+    try:
+        conn_str = f"DRIVER={{ODBC Driver 18 for SQL Server}};SERVER={connection_model.host};UID={connection_model.username};PWD={connection_model.password};Encrypt=Optional;TrustServerCertificate=yes;"
+        if module.database_name:
+            conn_str += f";DATABASE={module.database_name}"
+            
+        odbc_conn = pyodbc.connect(conn_str, autocommit=True)
+        cursor = odbc_conn.cursor()
+        
+        if module.object_type == 'job':
+            job_name = module.stored_proc_name
+            cursor.execute(f"EXEC msdb.dbo.sp_start_job N'{job_name}'")
+        else:
+            if parameters:
+                params_list = [submitted_params.get(p['name']) for p in parameters]
+                placeholders = ",".join(["?" for _ in params_list])
+                cursor.execute(f"EXEC {module.stored_proc_name} {placeholders}", params_list)
+            else:
+                cursor.execute(f"EXEC {module.stored_proc_name}")
+                
+            while True:
+                if cursor.description:
+                    columns = [col[0] for col in cursor.description]
+                    rows = cursor.fetchall()
+                    result_sets.append({
+                        'columns': columns,
+                        'rows': [dict(zip(columns, row)) for row in rows]
+                    })
+                if not cursor.nextset():
+                    break
+        
+        cursor.close()
+        odbc_conn.close()
+    except Exception as e:
+        error_msg = str(e)
+    
+    return result_sets, error_msg
+
+
+def _run_sp_background(app, log_id, module_id, connection_id, db_name, object_type,
+                        sp_name, parameters, submitted_params):
+    """Run SP execution in a background thread. Updates the AuditLog when done."""
+    with app.app_context():
+        log = AuditLog.query.get(log_id)
+        module = Module.query.get(module_id)
+        connection_model = ServerConnection.query.get(connection_id) if connection_id else None
+        
+        if not connection_model or connection_model.server_type != 'sqlserver':
+            log.status = 'error'
+            log.message = 'No valid SQL Server connection.'
+            log.end_time = dt.now(tz.utc)
+            db.session.commit()
+            return
+        
+        result_sets, error_msg = _execute_sp_sync(module, connection_model, parameters, submitted_params)
+        
+        log.end_time = dt.now(tz.utc)
+        if error_msg:
+            log.status = 'error'
+            log.message = error_msg
+        else:
+            log.status = 'success'
+            log_msg = 'Executed successfully.'
+            if result_sets:
+                log_msg += f' Returned {len(result_sets)} result set(s).'
+            log.message = log_msg
+            if result_sets:
+                log.result_data = json.dumps(result_sets, default=str)
+        
+        db.session.commit()
+
 
 @bp.route('/execute/<int:module_id>', methods=['GET', 'POST'])
 @login_required
@@ -178,91 +312,70 @@ def execute(module_id):
             flash(f"Warning: Could not fetch parameters dynamically from SP: {str(e)}", "warning")
             
     if request.method == 'POST':
-        submitted_params = {}
-        for param in parameters:
-            p_name = param.get('name')
-            p_type = param.get('type', 'text')
-            raw_value = request.form.get(p_name)
+        submitted_params = _parse_submitted_params(parameters, request.form)
+        run_in_background = request.form.get('background') == '1'
+        
+        if run_in_background:
+            # --- BACKGROUND EXECUTION ---
+            log = AuditLog(
+                user_id=current_user.id, module_id=module.id,
+                parameters_used=json.dumps(submitted_params, default=str),
+                status='running', message='Executing in background...'
+            )
+            db.session.add(log)
+            db.session.commit()
             
-            if p_type == 'checkbox':
-                submitted_params[p_name] = 1 if raw_value else 0
-            elif p_type == 'datetime-local' and raw_value:
-                # Convert "2026-05-04T11:44" to a Python datetime object
-                # so pyodbc sends it as a typed datetime parameter to SQL Server
-                try:
-                    submitted_params[p_name] = dt.fromisoformat(raw_value)
-                except ValueError:
-                    submitted_params[p_name] = raw_value
-            elif p_type == 'date' and raw_value:
-                # Convert "2026-05-04" to a Python date object
-                try:
-                    submitted_params[p_name] = dt_date.fromisoformat(raw_value)
-                except ValueError:
-                    submitted_params[p_name] = raw_value
-            elif p_type == 'number' and raw_value:
-                # Send numeric types as actual numbers
-                try:
-                    submitted_params[p_name] = int(raw_value) if '.' not in raw_value else float(raw_value)
-                except ValueError:
-                    submitted_params[p_name] = raw_value
-            else:
-                submitted_params[p_name] = raw_value
+            app = current_app._get_current_object()
+            thread = threading.Thread(
+                target=_run_sp_background,
+                args=(app, log.id, module.id, module.connection_id,
+                      module.database_name, module.object_type,
+                      module.stored_proc_name, parameters, submitted_params),
+                daemon=True
+            )
+            thread.start()
             
+            flash(f'"{module.name}" is now running in the background. You will be notified when it completes.', 'info')
+            return redirect(url_for('portal.dashboard'))
+        
+        # --- SYNCHRONOUS EXECUTION (Execute & Wait) ---
         result_sets = []
             
         try:
             if connection_model and connection_model.server_type == 'sqlserver':
-                conn_str = f"DRIVER={{ODBC Driver 18 for SQL Server}};SERVER={connection_model.host};UID={connection_model.username};PWD={connection_model.password};Encrypt=Optional;TrustServerCertificate=yes;"
-                if module.database_name:
-                    conn_str += f";DATABASE={module.database_name}"
-                    
-                odbc_conn = pyodbc.connect(conn_str, autocommit=True)
-                cursor = odbc_conn.cursor()
+                result_sets, error_msg = _execute_sp_sync(module, connection_model, parameters, submitted_params)
+                
+                if error_msg:
+                    raise Exception(error_msg)
                 
                 if module.object_type == 'job':
-                    job_name = module.stored_proc_name
-                    cursor.execute(f"EXEC msdb.dbo.sp_start_job N'{job_name}'")
-                    flash(f'SQL Server Job "{job_name}" has been requested to start.', 'success')
+                    flash(f'SQL Server Job "{module.stored_proc_name}" has been requested to start.', 'success')
                 else:
-                    if parameters:
-                        params_list = [submitted_params.get(p['name']) for p in parameters]
-                        placeholders = ",".join(["?" for _ in params_list])
-                        cursor.execute(f"EXEC {module.stored_proc_name} {placeholders}", params_list)
-                    else:
-                        cursor.execute(f"EXEC {module.stored_proc_name}")
-                        
-                    while True:
-                        if cursor.description:
-                            columns = [col[0] for col in cursor.description]
-                            rows = cursor.fetchall()
-                            result_sets.append({
-                                'columns': columns,
-                                'rows': [dict(zip(columns, row)) for row in rows]
-                            })
-                        if not cursor.nextset():
-                            break
-                            
                     flash(f'Stored Procedure "{module.stored_proc_name}" executed successfully.', 'success')
-                
-                cursor.close()
-                odbc_conn.close()
                 
             log_msg = 'Executed successfully.'
             if result_sets:
                 log_msg += f' Returned {len(result_sets)} result set(s).'
                 
             log = AuditLog(user_id=current_user.id, module_id=module.id, 
-                           parameters_used=json.dumps(submitted_params, default=str), status='success', message=log_msg)
+                           parameters_used=json.dumps(submitted_params, default=str),
+                           status='success', message=log_msg,
+                           end_time=dt.now(tz.utc), notified=True)
+            if result_sets:
+                log.result_data = json.dumps(result_sets, default=str)
             db.session.add(log)
             db.session.commit()
             
             if result_sets:
-                return render_template('portal/module_results.html', module=module, result_sets=result_sets)
+                return render_template('portal/module_results.html', module=module,
+                                       result_sets=result_sets, log_id=log.id)
             
         except Exception as e:
             error_msg = str(e)
             log = AuditLog(user_id=current_user.id, module_id=module.id, 
-                           parameters_used=json.dumps(submitted_params, default=str), status='error', message=error_msg)
+                           parameters_used=json.dumps(submitted_params, default=str),
+                           status='error', message=error_msg,
+                           end_time=dt.now(tz.utc), notified=True)
             db.session.add(log)
             db.session.commit()
             flash(f'Error executing module: {error_msg}', 'danger')
@@ -270,6 +383,97 @@ def execute(module_id):
         return redirect(url_for('portal.dashboard'))
         
     return render_template('portal/module_generic.html', module=module, parameters=parameters)
+
+
+# ──────────────────────────────────────────────
+# Task Polling & Background Task API
+# ──────────────────────────────────────────────
+
+@bp.route('/api/tasks/active')
+@login_required
+def api_tasks_active():
+    """Return the current user's running tasks + recently finished tasks not yet notified."""
+    running = AuditLog.query.filter_by(user_id=current_user.id, status='running').all()
+    
+    newly_done = AuditLog.query.filter(
+        AuditLog.user_id == current_user.id,
+        AuditLog.status.in_(['success', 'error']),
+        AuditLog.notified == False
+    ).all()
+    
+    tasks = []
+    for log in running:
+        tasks.append({
+            'id': log.id,
+            'module_name': log.module.name if log.module else '—',
+            'status': log.status,
+            'started': log.timestamp.strftime('%Y-%m-%d %H:%M:%S') if log.timestamp else None,
+        })
+    
+    completed = []
+    for log in newly_done:
+        has_results = log.result_data is not None
+        completed.append({
+            'id': log.id,
+            'module_name': log.module.name if log.module else '—',
+            'status': log.status,
+            'message': log.message or '',
+            'has_results': has_results,
+        })
+    
+    return jsonify({'running': tasks, 'completed': completed, 'running_count': len(running)})
+
+
+@bp.route('/api/tasks/<int:log_id>/dismiss', methods=['POST'])
+@login_required
+def api_task_dismiss(log_id):
+    """Mark a task notification as seen/dismissed."""
+    log = AuditLog.query.get_or_404(log_id)
+    if log.user_id != current_user.id and not current_user.is_admin():
+        abort(403)
+    log.notified = True
+    db.session.commit()
+    return jsonify({'ok': True})
+
+
+# ──────────────────────────────────────────────
+# My Executions — User's own history
+# ──────────────────────────────────────────────
+
+@bp.route('/executions')
+@login_required
+def my_executions():
+    """Show the current user's own execution history."""
+    logs = AuditLog.query.filter_by(user_id=current_user.id)\
+        .order_by(AuditLog.timestamp.desc()).limit(200).all()
+    
+    setting = AppSetting.query.filter_by(key='results_retention_days').first()
+    retention_days = int(setting.value) if setting and setting.value else 7
+    
+    return render_template('portal/my_executions.html', logs=logs, retention_days=retention_days)
+
+
+@bp.route('/executions/<int:log_id>/results')
+@login_required
+def view_execution_results(log_id):
+    """Re-render results from a stored execution."""
+    log = AuditLog.query.get_or_404(log_id)
+    if log.user_id != current_user.id and not current_user.is_admin():
+        abort(403)
+    
+    if not log.result_data:
+        flash('No results available for this execution. Results may have expired.', 'warning')
+        return redirect(url_for('portal.my_executions'))
+    
+    try:
+        result_sets = json.loads(log.result_data)
+    except json.JSONDecodeError:
+        flash('Could not parse stored results.', 'danger')
+        return redirect(url_for('portal.my_executions'))
+    
+    return render_template('portal/module_results.html',
+                           module=log.module, result_sets=result_sets, log_id=log.id)
+
 
 @bp.route('/execute/python/stream/<int:module_id>')
 @login_required
@@ -287,9 +491,9 @@ def execute_python_stream(module_id):
     def generate():
         import tempfile
         import shutil
-        import threading
+        import threading as _threading
         import queue as _queue
-        from datetime import datetime, timezone as tz
+        from datetime import datetime, timezone as _tz
 
         script_to_run = ""
         cwd = os.getcwd()
@@ -420,7 +624,7 @@ def execute_python_stream(module_id):
                 except Exception as exc:
                     out_queue.put(('error', str(exc)))
 
-            reader_thread = threading.Thread(target=_reader, daemon=True)
+            reader_thread = _threading.Thread(target=_reader, daemon=True)
             reader_thread.start()
 
             while True:
@@ -447,7 +651,7 @@ def execute_python_stream(module_id):
                 try:
                     log = AuditLog.query.get(log_id)
                     if log:
-                        log.end_time = datetime.now(tz.utc)
+                        log.end_time = datetime.now(_tz.utc)
                         log.status = 'success' if exit_code == 0 else 'error'
                         log.message = f'Exited with code {exit_code}.'
                         db.session.commit()

@@ -59,12 +59,23 @@
                 </ul>
                 <ul class="navbar-nav ms-auto">
                     {% if current_user.is_authenticated %}
+                    <!-- Running Tasks Indicator -->
+                    <li class="nav-item d-flex align-items-center me-3" id="taskIndicator" style="display:none !important;">
+                        <a href="{{ url_for('portal.my_executions') }}" class="nav-link position-relative p-1" title="Background Tasks">
+                            <i class="bi bi-cpu" style="font-size:1.2rem;"></i>
+                            <span id="taskBadge" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-warning text-dark" style="font-size:0.65rem;">
+                                0
+                            </span>
+                        </a>
+                    </li>
                     <li class="nav-item dropdown">
                         <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button"
                             data-bs-toggle="dropdown" aria-expanded="false">
                             <i class="bi bi-person-circle"></i> {{ current_user.email }}
                         </a>
                         <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="navbarDropdown">
+                            <li><a class="dropdown-item" href="{{ url_for('portal.my_executions') }}"><i class="bi bi-clock-history me-2"></i>My Executions</a></li>
+                            <li><hr class="dropdown-divider"></li>
                             <li><a class="dropdown-item" href="{{ url_for('auth.logout') }}">Logout</a></li>
                         </ul>
                     </li>
@@ -89,9 +100,95 @@
         {% block content %}{% endblock %}
     </div>
 
+    <!-- Toast container for background task notifications -->
+    <div class="toast-container position-fixed bottom-0 end-0 p-3" id="toastContainer" style="z-index:1090;"></div>
+
     <!-- Bootstrap Bundle with Popper -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+
+    {% if current_user.is_authenticated %}
+    <script>
+        // ─── Background Task Polling ───
+        (function() {
+            const POLL_INTERVAL = 5000; // 5 seconds
+            const indicator = document.getElementById('taskIndicator');
+            const badge = document.getElementById('taskBadge');
+            const toastContainer = document.getElementById('toastContainer');
+
+            function showToast(task) {
+                const isSuccess = task.status === 'success';
+                const borderClass = isSuccess ? 'border-success' : 'border-danger';
+                const iconClass = isSuccess ? 'bi-check-circle-fill text-success' : 'bi-x-circle-fill text-danger';
+                const statusText = isSuccess ? 'Completed' : 'Failed';
+
+                let actionBtn = '';
+                if (task.has_results) {
+                    actionBtn = `<a href="/portal/executions/${task.id}/results" class="btn btn-sm btn-outline-success mt-2"><i class="bi bi-table me-1"></i>View Results</a>`;
+                }
+
+                const toastHtml = `
+                    <div class="toast show ${borderClass}" role="alert" data-task-id="${task.id}"
+                         style="min-width:320px; background:#1e1e1e; color:#e0e0e0; border-left:4px solid;">
+                        <div class="toast-header bg-dark text-light border-0">
+                            <i class="bi ${iconClass} me-2"></i>
+                            <strong class="me-auto">${task.module_name}</strong>
+                            <small class="text-muted">${statusText}</small>
+                            <button type="button" class="btn-close btn-close-white ms-2" onclick="dismissTask(${task.id}, this)"></button>
+                        </div>
+                        <div class="toast-body">
+                            <span class="small">${task.message || ''}</span>
+                            ${actionBtn}
+                        </div>
+                    </div>`;
+                toastContainer.insertAdjacentHTML('beforeend', toastHtml);
+            }
+
+            window.dismissTask = function(logId, btn) {
+                fetch(`/portal/api/tasks/${logId}/dismiss`, { method: 'POST' })
+                    .catch(() => {});
+                const toast = btn.closest('.toast');
+                if (toast) toast.remove();
+            };
+
+            function pollTasks() {
+                fetch('/portal/api/tasks/active')
+                    .then(r => r.json())
+                    .then(data => {
+                        // Update badge
+                        const count = data.running_count || 0;
+                        if (count > 0) {
+                            indicator.style.display = 'flex !important';
+                            indicator.classList.remove('d-none');
+                            indicator.style.setProperty('display', 'flex', 'important');
+                            badge.textContent = count;
+                        } else {
+                            // Keep visible if there are completed tasks to show
+                            if (!data.completed || data.completed.length === 0) {
+                                indicator.style.setProperty('display', 'none', 'important');
+                            }
+                        }
+
+                        // Show toasts for newly completed tasks
+                        if (data.completed) {
+                            data.completed.forEach(task => {
+                                // Don't show duplicate toasts
+                                if (!document.querySelector(`.toast[data-task-id="${task.id}"]`)) {
+                                    showToast(task);
+                                }
+                            });
+                        }
+                    })
+                    .catch(() => {});
+            }
+
+            // Initial poll, then repeat
+            pollTasks();
+            setInterval(pollTasks, POLL_INTERVAL);
+        })();
+    </script>
+    {% endif %}
+
     {% block scripts %}{% endblock %}
 </body>
 
