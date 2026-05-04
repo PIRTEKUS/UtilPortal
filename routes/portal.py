@@ -248,6 +248,11 @@ def _run_sp_background(app, log_id, module_id, connection_id, db_name, object_ty
         
         result_sets, error_msg, _ = _execute_sp_sync(module, connection_model, parameters, submitted_params)
         
+        # Check if the execution was cancelled by the user while running
+        db.session.refresh(log)
+        if log.status != 'running':
+            return
+        
         log.end_time = dt.now(tz.utc)
         if error_msg:
             log.status = 'error'
@@ -516,6 +521,27 @@ def my_executions():
     retention_days = int(setting.value) if setting and setting.value else 7
     
     return render_template('portal/my_executions.html', logs=logs, retention_days=retention_days)
+
+@bp.route('/executions/<int:log_id>/stop', methods=['POST'])
+@login_required
+def stop_execution(log_id):
+    log = AuditLog.query.get_or_404(log_id)
+    if log.user_id != current_user.id:
+        flash('Unauthorized to stop this execution.', 'danger')
+        return redirect(url_for('portal.my_executions'))
+        
+    if log.status != 'running':
+        flash('This execution is no longer running.', 'info')
+        return redirect(url_for('portal.my_executions'))
+        
+    # Mark as error / cancelled
+    log.status = 'error'
+    log.message = log.message + '\n\n[Execution forcefully cancelled by user]'
+    log.end_time = dt.now(tz.utc)
+    db.session.commit()
+    
+    flash(f'Execution #{log.id} has been cancelled.', 'success')
+    return redirect(url_for('portal.my_executions'))
 
 
 @bp.route('/executions/<int:log_id>/results')
