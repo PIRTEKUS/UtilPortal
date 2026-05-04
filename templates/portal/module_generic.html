@@ -22,7 +22,9 @@
                     {% if parameters %}
                     {% for param in parameters %}
                     <div class="mb-3">
+                        {% if param.type != 'checkbox' %}
                         <label for="{{ param.name }}" class="form-label">{{ param.label }}</label>
+                        {% endif %}
 
                         {% if param.type == 'select' %}
                         <select class="form-select bg-dark text-light border-secondary" id="{{ param.name }}"
@@ -36,6 +38,20 @@
                         {% elif param.type == 'textarea' %}
                         <textarea class="form-control" id="{{ param.name }}" name="{{ param.name }}" rows="3" {% if
                             param.required %}required{% endif %} placeholder="{{ param.placeholder }}"></textarea>
+
+                        {% elif param.type == 'checkbox' %}
+                        <div class="form-check">
+                            <input class="form-check-input bg-dark border-secondary" type="checkbox" id="{{ param.name }}" name="{{ param.name }}" value="1">
+                            <label class="form-check-label" for="{{ param.name }}">{{ param.label }}</label>
+                        </div>
+                        
+                        {% elif param.type == 'date' %}
+                        <input type="date" class="form-control" id="{{ param.name }}" name="{{ param.name }}" {% if
+                            param.required %}required{% endif %}>
+
+                        {% elif param.type == 'datetime-local' %}
+                        <input type="datetime-local" class="form-control" id="{{ param.name }}" name="{{ param.name }}" {% if
+                            param.required %}required{% endif %}>
 
                         {% elif param.type == 'number' %}
                         <input type="number" class="form-control" id="{{ param.name }}" name="{{ param.name }}" {% if

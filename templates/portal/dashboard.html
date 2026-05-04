@@ -45,7 +45,9 @@
                     <summary class="text-primary"><i class="fas fa-folder-open me-2 text-warning"></i>{{ f.name }}</summary>
                     <ul>
                         {% for sub in f.subfolders %}
+                        {% if sub.id in allowed_folder_ids %}
                         <li>{{ render_folder(sub) }}</li>
+                        {% endif %}
                         {% endfor %}
                         
                         {% for m in f.modules %}
@@ -69,10 +71,8 @@
 
                 <!-- Render Folders -->
                 {% for folder in folders %}
-                    {% if not folder.parent_id %}
-                        <!-- We only render the root folder if it contains allowed modules, or any of its subfolders contain allowed modules. 
-                             For simplicity, we render it if it has children, the inner loop hides unassigned modules. 
-                             A fully robust solution would pre-filter folders. -->
+                    {% if not folder.parent_id and folder.id in allowed_folder_ids %}
+                        <!-- We only render the root folder if it contains allowed modules, or any of its subfolders contain allowed modules. -->
                         {{ render_folder(folder) }}
                     {% endif %}
                 {% endfor %}

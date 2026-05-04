@@ -71,7 +71,27 @@ def dashboard():
     # and in the template filter modules to only show allowed ones.
     all_folders = Folder.query.all()
     
-    return render_template('portal/dashboard.html', modules=modules, folders=all_folders, allowed_module_ids=[m.id for m in modules])
+    allowed_module_ids = set(m.id for m in modules)
+    allowed_folder_ids = set()
+
+    def check_folder(f):
+        if f.id in allowed_folder_ids:
+            return True
+        has_allowed = False
+        if any(m.id in allowed_module_ids for m in f.modules):
+            has_allowed = True
+        for sub in f.subfolders:
+            if check_folder(sub):
+                has_allowed = True
+        if has_allowed:
+            allowed_folder_ids.add(f.id)
+        return has_allowed
+
+    for f in all_folders:
+        if not f.parent_id:
+            check_folder(f)
+    
+    return render_template('portal/dashboard.html', modules=modules, folders=all_folders, allowed_module_ids=list(allowed_module_ids), allowed_folder_ids=list(allowed_folder_ids))
 
 @bp.route('/execute/<int:module_id>', methods=['GET', 'POST'])
 @login_required
@@ -135,6 +155,12 @@ def execute(module_id):
                 input_type = 'text'
                 if data_type in ('int', 'bigint', 'smallint', 'tinyint', 'decimal', 'numeric', 'float', 'real'):
                     input_type = 'number'
+                elif data_type == 'bit':
+                    input_type = 'checkbox'
+                elif data_type == 'date':
+                    input_type = 'date'
+                elif data_type in ('datetime', 'datetime2', 'smalldatetime'):
+                    input_type = 'datetime-local'
                 elif data_type in ('varchar', 'nvarchar', 'text', 'ntext') and 'max' not in data_type:
                     input_type = 'text'
                     
@@ -142,7 +168,7 @@ def execute(module_id):
                     'name': row.ParameterName,
                     'label': param_name.replace('_', ' ').title(),
                     'type': input_type,
-                    'required': True
+                    'required': input_type != 'checkbox'
                 })
                 
             cursor.close()
@@ -154,7 +180,10 @@ def execute(module_id):
         submitted_params = {}
         for param in parameters:
             p_name = param.get('name')
-            submitted_params[p_name] = request.form.get(p_name)
+            if param.get('type') == 'checkbox':
+                submitted_params[p_name] = 1 if request.form.get(p_name) else 0
+            else:
+                submitted_params[p_name] = request.form.get(p_name)
             
         result_sets = []
             

@@ -108,7 +108,7 @@
                                                         <div class="row g-3">
                                                             <div class="col-md-6">
                                                                 <label class="form-label">Server Connection</label>
-                                                                <select name="connection_id" class="form-select">
+                                                                <select name="connection_id" class="form-select edit_connectionSelect" data-id="{{ module.id }}">
                                                                     <option value="">-- Select Connection --</option>
                                                                     {% for conn in connections %}
                                                                     <option value="{{ conn.id }}" {% if module.connection_id == conn.id %}selected{% endif %}>{{ conn.name }}</option>
@@ -124,7 +124,13 @@
                                                             </div>
                                                             <div class="col-md-6">
                                                                 <label class="form-label">Target Database</label>
-                                                                <input type="text" name="database_name" class="form-control" value="{{ module.database_name or '' }}">
+                                                                <select name="database_name" class="form-select edit_databaseSelect" id="edit_databaseSelect_{{ module.id }}" data-selected="{{ module.database_name or '' }}">
+                                                                    {% if module.database_name %}
+                                                                    <option value="{{ module.database_name }}" selected>{{ module.database_name }}</option>
+                                                                    {% else %}
+                                                                    <option value="">-- Select Connection First --</option>
+                                                                    {% endif %}
+                                                                </select>
                                                             </div>
                                                             <div class="col-md-6">
                                                                 <label class="form-label">Stored Procedure Name / Job Name</label>
@@ -254,7 +260,9 @@
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label">Target Database</label>
-                                    <input type="text" name="database_name" class="form-control" placeholder="Optional">
+                                    <select name="database_name" class="form-select" id="create_databaseSelect">
+                                        <option value="">-- Select Connection First --</option>
+                                    </select>
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label">Stored Procedure Name / Job Name</label>
@@ -336,6 +344,56 @@
             } else {
                 genFields.style.display = 'none';
                 custFields.style.display = 'block';
+            }
+        });
+    });
+
+    function loadDatabases(connId, selectElem, selectedDb = null) {
+        if (!connId) {
+            selectElem.innerHTML = '<option value="">-- Select Connection First --</option>';
+            return;
+        }
+        selectElem.innerHTML = '<option value="">Loading...</option>';
+        fetch(`/admin/api/connections/${connId}/databases`)
+            .then(response => response.json())
+            .then(data => {
+                selectElem.innerHTML = '<option value="">-- Select Database --</option>';
+                if (data.databases) {
+                    data.databases.forEach(db => {
+                        let opt = document.createElement('option');
+                        opt.value = db;
+                        opt.textContent = db;
+                        if (db === selectedDb) opt.selected = true;
+                        selectElem.appendChild(opt);
+                    });
+                } else if (data.error) {
+                    selectElem.innerHTML = `<option value="">Error: ${data.error}</option>`;
+                }
+            })
+            .catch(err => {
+                selectElem.innerHTML = '<option value="">Error loading</option>';
+            });
+    }
+
+    document.getElementById('create_connectionSelect').addEventListener('change', function() {
+        loadDatabases(this.value, document.getElementById('create_databaseSelect'));
+    });
+
+    document.querySelectorAll('.edit_connectionSelect').forEach(select => {
+        select.addEventListener('change', function() {
+            const id = this.getAttribute('data-id');
+            const dbSelect = document.getElementById(`edit_databaseSelect_${id}`);
+            loadDatabases(this.value, dbSelect);
+        });
+    });
+
+    document.querySelectorAll('[id^="editModuleModal"]').forEach(modal => {
+        modal.addEventListener('show.bs.modal', function() {
+            const connSelect = this.querySelector('.edit_connectionSelect');
+            const dbSelect = this.querySelector('.edit_databaseSelect');
+            const selectedDb = dbSelect.getAttribute('data-selected');
+            if (connSelect.value && dbSelect.options.length <= 2) {
+                loadDatabases(connSelect.value, dbSelect, selectedDb);
             }
         });
     });
