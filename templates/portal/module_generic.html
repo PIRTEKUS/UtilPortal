@@ -2,6 +2,111 @@
 {% block title %}{{ module.name }}{% endblock %}
 
 {% block content %}
+<style>
+    /* ─── Visual Time Picker ─── */
+    .time-picker-widget {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        background: #f8f9fa;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        padding: 6px 12px;
+        user-select: none;
+    }
+    .time-picker-widget:focus-within {
+        border-color: var(--pirtek-red, #da291c);
+        box-shadow: 0 0 0 0.25rem rgba(218, 41, 28, 0.18);
+    }
+    .tp-col {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2px;
+    }
+    .tp-btn {
+        background: none;
+        border: none;
+        color: #888;
+        font-size: 0.7rem;
+        line-height: 1;
+        padding: 2px 8px;
+        cursor: pointer;
+        border-radius: 4px;
+        transition: background 0.15s, color 0.15s;
+    }
+    .tp-btn:hover { background: #e9ecef; color: #333; }
+    .tp-btn:active { background: #dee2e6; }
+    .tp-value {
+        font-size: 1.35rem;
+        font-weight: 700;
+        font-family: 'Montserrat', monospace;
+        color: #333;
+        min-width: 36px;
+        text-align: center;
+        padding: 2px 4px;
+        border-radius: 4px;
+        cursor: default;
+        outline: none;
+        transition: background 0.15s;
+    }
+    .tp-value:focus {
+        background: #e0e7ff;
+        box-shadow: 0 0 0 2px #6366f1;
+    }
+    .tp-separator {
+        font-size: 1.35rem;
+        font-weight: 700;
+        color: #999;
+        padding: 0 1px;
+        align-self: center;
+    }
+    .tp-ampm {
+        display: flex;
+        flex-direction: column;
+        margin-left: 6px;
+        gap: 2px;
+    }
+    .tp-ampm-btn {
+        font-size: 0.7rem;
+        font-weight: 700;
+        padding: 3px 8px;
+        border: 1px solid #ddd;
+        background: #fff;
+        color: #888;
+        cursor: pointer;
+        border-radius: 4px;
+        transition: all 0.15s;
+        text-transform: uppercase;
+    }
+    .tp-ampm-btn.active {
+        background: var(--pirtek-red, #da291c);
+        color: #fff;
+        border-color: var(--pirtek-red, #da291c);
+    }
+    .tp-ampm-btn:hover:not(.active) { background: #f0f0f0; }
+
+    /* Duration recommendation */
+    .exec-stats-bar {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        flex-wrap: wrap;
+    }
+    .exec-stat {
+        text-align: center;
+    }
+    .exec-stat .value {
+        font-size: 1.1rem;
+        font-weight: 700;
+    }
+    .exec-stat .label {
+        font-size: 0.7rem;
+        color: #aaa;
+        text-transform: uppercase;
+    }
+</style>
+
 <div class="row justify-content-center">
     <div class="col-md-8">
         <div class="card shadow border-primary mb-4">
@@ -54,19 +159,42 @@
 
                         {% elif param.type == 'datetime-local' %}
                         <input type="hidden" id="{{ param.name }}" name="{{ param.name }}">
-                        <div class="row g-2">
-                            <div class="col-md-6">
+                        <div class="row g-2 align-items-end">
+                            <div class="col-md-5">
                                 <label class="form-label small text-muted"><i class="bi bi-calendar3 me-1"></i>Date</label>
                                 <input type="date" class="form-control" id="{{ param.name }}_date"
                                     {% if param.required %}required{% endif %}
-                                    onchange="combineDatetime('{{ param.name }}')">
+                                    onchange="syncTimePicker('{{ param.name }}')">
                             </div>
-                            <div class="col-md-6">
+                            <div class="col-md-7">
                                 <label class="form-label small text-muted"><i class="bi bi-clock me-1"></i>Time</label>
-                                <input type="time" class="form-control" id="{{ param.name }}_time"
-                                    step="1"
-                                    {% if param.required %}required{% endif %}
-                                    onchange="combineDatetime('{{ param.name }}')">
+                                <div class="time-picker-widget" id="{{ param.name }}_tp" role="group" aria-label="Time picker for {{ param.label }}">
+                                    <!-- Hours -->
+                                    <div class="tp-col">
+                                        <button type="button" class="tp-btn" onclick="tpStep('{{ param.name }}','h',1)" aria-label="Increase hour"><i class="bi bi-chevron-up"></i></button>
+                                        <span class="tp-value" tabindex="0" id="{{ param.name }}_h" role="spinbutton" aria-label="Hour" aria-valuemin="1" aria-valuemax="12" aria-valuenow="12" data-field="h">12</span>
+                                        <button type="button" class="tp-btn" onclick="tpStep('{{ param.name }}','h',-1)" aria-label="Decrease hour"><i class="bi bi-chevron-down"></i></button>
+                                    </div>
+                                    <span class="tp-separator">:</span>
+                                    <!-- Minutes -->
+                                    <div class="tp-col">
+                                        <button type="button" class="tp-btn" onclick="tpStep('{{ param.name }}','m',1)" aria-label="Increase minute"><i class="bi bi-chevron-up"></i></button>
+                                        <span class="tp-value" tabindex="0" id="{{ param.name }}_m" role="spinbutton" aria-label="Minute" aria-valuemin="0" aria-valuemax="59" aria-valuenow="0" data-field="m">00</span>
+                                        <button type="button" class="tp-btn" onclick="tpStep('{{ param.name }}','m',-1)" aria-label="Decrease minute"><i class="bi bi-chevron-down"></i></button>
+                                    </div>
+                                    <span class="tp-separator">:</span>
+                                    <!-- Seconds -->
+                                    <div class="tp-col">
+                                        <button type="button" class="tp-btn" onclick="tpStep('{{ param.name }}','s',1)" aria-label="Increase second"><i class="bi bi-chevron-up"></i></button>
+                                        <span class="tp-value" tabindex="0" id="{{ param.name }}_s" role="spinbutton" aria-label="Second" aria-valuemin="0" aria-valuemax="59" aria-valuenow="0" data-field="s">00</span>
+                                        <button type="button" class="tp-btn" onclick="tpStep('{{ param.name }}','s',-1)" aria-label="Decrease second"><i class="bi bi-chevron-down"></i></button>
+                                    </div>
+                                    <!-- AM/PM -->
+                                    <div class="tp-ampm">
+                                        <button type="button" class="tp-ampm-btn active" id="{{ param.name }}_am" onclick="tpSetPeriod('{{ param.name }}','AM')" aria-label="Set AM">AM</button>
+                                        <button type="button" class="tp-ampm-btn" id="{{ param.name }}_pm" onclick="tpSetPeriod('{{ param.name }}','PM')" aria-label="Set PM">PM</button>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
@@ -110,6 +238,46 @@
                                 <div class="modal-body text-light">
                                     <p>Are you sure you want to execute <strong>{{ module.name }}</strong> with the
                                     provided parameters?</p>
+
+                                    <!-- Execution Duration Stats -->
+                                    {% if exec_stats and exec_stats.last_duration is not none %}
+                                    <div class="card bg-dark border-secondary mb-3">
+                                        <div class="card-body py-2 px-3">
+                                            <div class="exec-stats-bar">
+                                                <div class="exec-stat">
+                                                    <div class="value text-info">
+                                                        {% if exec_stats.last_duration >= 60 %}
+                                                            {{ exec_stats.last_duration // 60 }}m {{ exec_stats.last_duration % 60 }}s
+                                                        {% else %}
+                                                            {{ exec_stats.last_duration }}s
+                                                        {% endif %}
+                                                    </div>
+                                                    <div class="label">Last Run</div>
+                                                </div>
+                                                <div class="exec-stat">
+                                                    <div class="value text-info">
+                                                        {% if exec_stats.avg_duration >= 60 %}
+                                                            {{ exec_stats.avg_duration // 60 }}m {{ exec_stats.avg_duration % 60 }}s
+                                                        {% else %}
+                                                            {{ exec_stats.avg_duration }}s
+                                                        {% endif %}
+                                                    </div>
+                                                    <div class="label">Average</div>
+                                                </div>
+                                                <div class="exec-stat flex-grow-1">
+                                                    {% if exec_stats.recommendation == 'wait' %}
+                                                    <div class="value text-success"><i class="bi bi-lightning-charge-fill"></i> Fast</div>
+                                                    <div class="label">Recommended: Execute & Wait</div>
+                                                    {% else %}
+                                                    <div class="value text-warning"><i class="bi bi-hourglass-split"></i> Slow</div>
+                                                    <div class="label">Recommended: Run in Background</div>
+                                                    {% endif %}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    {% endif %}
+
                                     <div class="alert alert-info bg-dark border-info py-2 small mb-0">
                                         <i class="bi bi-info-circle me-1"></i>
                                         <strong>Execute & Wait</strong> keeps you on this page until results are ready.<br>
@@ -140,26 +308,148 @@
 
 {% block scripts %}
 <script>
-    // Combine separate date & time pickers into the hidden datetime-local field
-    function combineDatetime(paramName) {
-        var dateVal = document.getElementById(paramName + '_date').value;
-        var timeVal = document.getElementById(paramName + '_time').value;
+    // ─── Visual Time Picker Logic ───
+    // State stored per parameter name
+    var tpState = {};
+
+    function tpInit(paramName) {
+        tpState[paramName] = { h: 12, m: 0, s: 0, period: 'AM' };
+    }
+
+    function tpStep(paramName, field, delta) {
+        if (!tpState[paramName]) tpInit(paramName);
+        var st = tpState[paramName];
+
+        if (field === 'h') {
+            st.h += delta;
+            if (st.h > 12) st.h = 1;
+            if (st.h < 1) st.h = 12;
+        } else if (field === 'm') {
+            st.m += delta;
+            if (st.m > 59) st.m = 0;
+            if (st.m < 0) st.m = 59;
+        } else if (field === 's') {
+            st.s += delta;
+            if (st.s > 59) st.s = 0;
+            if (st.s < 0) st.s = 59;
+        }
+
+        tpRender(paramName);
+        syncTimePicker(paramName);
+    }
+
+    function tpSetPeriod(paramName, period) {
+        if (!tpState[paramName]) tpInit(paramName);
+        tpState[paramName].period = period;
+        tpRender(paramName);
+        syncTimePicker(paramName);
+    }
+
+    function tpRender(paramName) {
+        var st = tpState[paramName];
+        var hEl = document.getElementById(paramName + '_h');
+        var mEl = document.getElementById(paramName + '_m');
+        var sEl = document.getElementById(paramName + '_s');
+        var amEl = document.getElementById(paramName + '_am');
+        var pmEl = document.getElementById(paramName + '_pm');
+
+        if (hEl) {
+            hEl.textContent = String(st.h).padStart(2, '0');
+            hEl.setAttribute('aria-valuenow', st.h);
+        }
+        if (mEl) {
+            mEl.textContent = String(st.m).padStart(2, '0');
+            mEl.setAttribute('aria-valuenow', st.m);
+        }
+        if (sEl) {
+            sEl.textContent = String(st.s).padStart(2, '0');
+            sEl.setAttribute('aria-valuenow', st.s);
+        }
+        if (amEl && pmEl) {
+            amEl.classList.toggle('active', st.period === 'AM');
+            pmEl.classList.toggle('active', st.period === 'PM');
+        }
+    }
+
+    function syncTimePicker(paramName) {
+        // Convert 12h to 24h and set the hidden field
+        if (!tpState[paramName]) tpInit(paramName);
+        var st = tpState[paramName];
+        var h24 = st.h;
+        if (st.period === 'AM' && h24 === 12) h24 = 0;
+        if (st.period === 'PM' && h24 !== 12) h24 += 12;
+
+        var dateVal = document.getElementById(paramName + '_date');
         var hidden = document.getElementById(paramName);
-        if (dateVal && timeVal) {
-            hidden.value = dateVal + 'T' + timeVal;
-        } else if (dateVal) {
-            hidden.value = dateVal + 'T00:00:00';
+        var timeStr = String(h24).padStart(2, '0') + ':' + String(st.m).padStart(2, '0') + ':' + String(st.s).padStart(2, '0');
+
+        if (dateVal && dateVal.value) {
+            hidden.value = dateVal.value + 'T' + timeStr;
         } else {
             hidden.value = '';
         }
     }
 
-    // Add simple loading state to button on submit
+    // Keyboard navigation for time picker values (arrow up/down, left/right to move between fields)
+    document.addEventListener('keydown', function(e) {
+        var el = e.target;
+        if (!el.classList.contains('tp-value')) return;
+
+        var field = el.getAttribute('data-field');
+        var widget = el.closest('.time-picker-widget');
+        if (!widget) return;
+        var paramName = widget.id.replace('_tp', '');
+
+        if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            tpStep(paramName, field, 1);
+        } else if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            tpStep(paramName, field, -1);
+        } else if (e.key === 'ArrowRight') {
+            e.preventDefault();
+            // Move focus to next tp-value
+            var values = Array.from(widget.querySelectorAll('.tp-value'));
+            var idx = values.indexOf(el);
+            if (idx < values.length - 1) values[idx + 1].focus();
+        } else if (e.key === 'ArrowLeft') {
+            e.preventDefault();
+            var values = Array.from(widget.querySelectorAll('.tp-value'));
+            var idx = values.indexOf(el);
+            if (idx > 0) values[idx - 1].focus();
+        } else if (e.key === 'a' || e.key === 'A') {
+            e.preventDefault();
+            tpSetPeriod(paramName, 'AM');
+        } else if (e.key === 'p' || e.key === 'P') {
+            e.preventDefault();
+            tpSetPeriod(paramName, 'PM');
+        }
+    });
+
+    // Mouse wheel support on time picker values
+    document.addEventListener('wheel', function(e) {
+        var el = e.target;
+        if (!el.classList.contains('tp-value')) return;
+        e.preventDefault();
+        var field = el.getAttribute('data-field');
+        var widget = el.closest('.time-picker-widget');
+        if (!widget) return;
+        var paramName = widget.id.replace('_tp', '');
+        tpStep(paramName, field, e.deltaY < 0 ? 1 : -1);
+    }, { passive: false });
+
+    // Initialize all time pickers on page
+    document.querySelectorAll('.time-picker-widget').forEach(function(w) {
+        var paramName = w.id.replace('_tp', '');
+        tpInit(paramName);
+    });
+
+    // Form submit handler
     document.getElementById('moduleForm').addEventListener('submit', function () {
-        // Ensure all datetime combos are synced before submitting
-        document.querySelectorAll('input[type="hidden"][id]').forEach(function(hidden) {
-            var dateInput = document.getElementById(hidden.id + '_date');
-            if (dateInput) combineDatetime(hidden.id);
+        // Sync all time pickers
+        document.querySelectorAll('.time-picker-widget').forEach(function(w) {
+            var paramName = w.id.replace('_tp', '');
+            syncTimePicker(paramName);
         });
 
         var isBackground = document.getElementById('backgroundField').value === '1';

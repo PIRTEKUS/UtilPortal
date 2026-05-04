@@ -381,8 +381,35 @@ def execute(module_id):
             flash(f'Error executing module: {error_msg}', 'danger')
             
         return redirect(url_for('portal.dashboard'))
+    
+    # --- Compute execution duration stats for this module ---
+    from sqlalchemy import func
+    exec_stats = {'last_duration': None, 'avg_duration': None, 'recommendation': 'background'}
+    
+    completed_logs = AuditLog.query.filter(
+        AuditLog.module_id == module.id,
+        AuditLog.status.in_(['success', 'error']),
+        AuditLog.end_time.isnot(None),
+        AuditLog.timestamp.isnot(None)
+    ).order_by(AuditLog.timestamp.desc()).limit(20).all()
+    
+    if completed_logs:
+        # Last execution duration
+        last = completed_logs[0]
+        last_secs = (last.end_time - last.timestamp).total_seconds()
+        exec_stats['last_duration'] = int(last_secs)
         
-    return render_template('portal/module_generic.html', module=module, parameters=parameters)
+        # Average across recent executions
+        durations = [(l.end_time - l.timestamp).total_seconds() for l in completed_logs]
+        avg_secs = sum(durations) / len(durations)
+        exec_stats['avg_duration'] = int(avg_secs)
+        
+        # Recommend "wait" if both last and avg are under 30 seconds
+        if last_secs < 30 and avg_secs < 30:
+            exec_stats['recommendation'] = 'wait'
+        
+    return render_template('portal/module_generic.html', module=module,
+                           parameters=parameters, exec_stats=exec_stats)
 
 
 # ──────────────────────────────────────────────
