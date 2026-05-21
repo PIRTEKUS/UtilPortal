@@ -469,35 +469,44 @@ def execute(module_id):
 @login_required
 def api_tasks_active():
     """Return the current user's running tasks + recently finished tasks not yet notified."""
-    running = AuditLog.query.filter_by(user_id=current_user.id, status='running').all()
-    
-    newly_done = AuditLog.query.filter(
-        AuditLog.user_id == current_user.id,
-        AuditLog.status.in_(['success', 'error']),
-        AuditLog.notified == False
-    ).all()
-    
-    tasks = []
-    for log in running:
-        tasks.append({
-            'id': log.id,
-            'module_name': log.module.name if log.module else '—',
-            'status': log.status,
-            'started': log.timestamp.strftime('%Y-%m-%d %H:%M:%S') if log.timestamp else None,
-        })
-    
-    completed = []
-    for log in newly_done:
-        has_results = log.result_data is not None
-        completed.append({
-            'id': log.id,
-            'module_name': log.module.name if log.module else '—',
-            'status': log.status,
-            'message': log.message or '',
-            'has_results': has_results,
-        })
-    
-    return jsonify({'running': tasks, 'completed': completed, 'running_count': len(running)})
+    try:
+        running = AuditLog.query.filter_by(user_id=current_user.id, status='running').all()
+
+        try:
+            newly_done = AuditLog.query.filter(
+                AuditLog.user_id == current_user.id,
+                AuditLog.status.in_(['success', 'error']),
+                AuditLog.notified == False  # noqa: E712
+            ).all()
+        except Exception:
+            # 'notified' column may not exist yet (migration pending) — degrade gracefully
+            newly_done = []
+
+        tasks = []
+        for log in running:
+            tasks.append({
+                'id': log.id,
+                'module_name': log.module.name if log.module else '—',
+                'status': log.status,
+                'started': log.timestamp.strftime('%Y-%m-%d %H:%M:%S') if log.timestamp else None,
+            })
+
+        completed = []
+        for log in newly_done:
+            has_results = log.result_data is not None
+            completed.append({
+                'id': log.id,
+                'module_name': log.module.name if log.module else '—',
+                'status': log.status,
+                'message': (log.message or '')[:300],   # cap length to be safe
+                'has_results': has_results,
+            })
+
+        return jsonify({'running': tasks, 'completed': completed, 'running_count': len(running)})
+
+    except Exception as e:
+        # Never return a non-JSON 500 — the browser's r.json() would break page JS
+        return jsonify({'running': [], 'completed': [], 'running_count': 0, 'error': str(e)}), 200
 
 
 @bp.route('/api/tasks/<int:log_id>/dismiss', methods=['POST'])

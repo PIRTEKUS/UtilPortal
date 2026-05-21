@@ -134,8 +134,8 @@ class AuditLog(db.Model):
     status = db.Column(db.String(50))  # 'running', 'success', or 'error'
     message = db.Column(db.Text)
     pid = db.Column(db.Integer, nullable=True)
+    notified = db.Column(db.Boolean, default=False, nullable=False, server_default='0')
     result_data = db.Column(db.Text, nullable=True)   # JSON of SP result sets
-    notified = db.Column(db.Boolean, default=False)    # Whether user saw the completion toast
 
     user = db.relationship('User', backref=db.backref('audit_logs', lazy=True))
     module = db.relationship('Module', backref=db.backref('audit_logs', lazy=True))
