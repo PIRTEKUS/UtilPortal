@@ -277,7 +277,7 @@
     let currentDiagnostics = null;
 
     function showDiagnostics(logId) {
-        fetch(`/admin/activity/${logId}/details`)
+        fetch(`/admin/activity/${logId}/details?t=${Date.now()}`)
             .then(res => res.json())
             .then(data => {
                 currentDiagnostics = data;
@@ -318,7 +318,7 @@
                 document.getElementById('m-output').textContent = data.message || 'No details available.';
                 
                 const modalEl = document.getElementById('diagnosticsModal');
-                const modal = new bootstrap.Modal(modalEl);
+                const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
                 modal.show();
             })
             .catch(err => {

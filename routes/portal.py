@@ -151,13 +151,29 @@ def _parse_submitted_params(parameters, form):
             submitted[p_name] = raw_value
     return submitted
 
+def _safe_sp_name(sp_name):
+    """Wrap stored procedure name parts in brackets if they contain spaces."""
+    if not sp_name:
+        return sp_name
+    parts = sp_name.split('.')
+    safe_parts = []
+    for part in parts:
+        part = part.strip()
+        if ' ' in part and not (part.startswith('[') and part.endswith(']')):
+            safe_parts.append(f"[{part}]")
+        else:
+            safe_parts.append(part)
+    return '.'.join(safe_parts)
+
+
 def _build_sql_call(sp_name, parameters, submitted_params, object_type='sp'):
     """Build a human-readable SQL EXEC statement for diagnostics / SSMS testing."""
     if object_type == 'job':
         return f"EXEC msdb.dbo.sp_start_job N'{sp_name}'"
     
+    safe_name = _safe_sp_name(sp_name)
     if not parameters:
-        return f"EXEC {sp_name}"
+        return f"EXEC {safe_name}"
     
     parts = []
     for p in parameters:
@@ -171,7 +187,7 @@ def _build_sql_call(sp_name, parameters, submitted_params, object_type='sp'):
             parts.append(f"'{val}'")
     
     param_str = ', '.join(parts)
-    return f"EXEC {sp_name} {param_str}"
+    return f"EXEC {safe_name} {param_str}"
 
 
 def _execute_sp_sync(module, connection_model, parameters, submitted_params):
@@ -200,12 +216,13 @@ def _execute_sp_sync(module, connection_model, parameters, submitted_params):
             job_name = module.stored_proc_name
             cursor.execute(f"EXEC msdb.dbo.sp_start_job N'{job_name}'")
         else:
+            safe_name = _safe_sp_name(module.stored_proc_name)
             if parameters:
                 params_list = [submitted_params.get(p['name']) for p in parameters]
                 placeholders = ",".join(["?" for _ in params_list])
-                cursor.execute(f"EXEC {module.stored_proc_name} {placeholders}", params_list)
+                cursor.execute(f"EXEC {safe_name} {placeholders}", params_list)
             else:
-                cursor.execute(f"EXEC {module.stored_proc_name}")
+                cursor.execute(f"EXEC {safe_name}")
                 
             while True:
                 if cursor.description:
