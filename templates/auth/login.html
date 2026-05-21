@@ -10,45 +10,98 @@
                 <h3 class="mt-2 fw-bold">Sign In to UtilPortal</h3>
                 <p class="text-muted mb-0">Self-Service IT Utilities</p>
             </div>
-            <div class="card-body bg-dark">
-                <form action="{{ url_for('auth.login') }}" method="post" class="needs-validation" novalidate>
-                    <div class="mb-3">
-                        <label for="email" class="form-label">Email address</label>
-                        <div class="input-group">
-                            <span class="input-group-text bg-secondary border-secondary"><i
-                                    class="bi bi-envelope"></i></span>
-                            <input type="email" class="form-control" id="email" name="email" required autofocus
-                                placeholder="name@company.com">
-                        </div>
-                    </div>
+            <div class="card-body bg-dark py-4">
+                <!-- Default SSO Option (Microsoft) -->
+                <div class="d-grid gap-2 mb-3">
+                    <a href="{{ url_for('auth.login_sso') }}" class="btn btn-microsoft py-2.5 fs-6 fw-semibold d-flex align-items-center justify-content-center shadow-sm">
+                        <svg class="me-2" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 23 23">
+                            <rect x="0" y="0" width="11" height="11" fill="#f25022"/>
+                            <rect x="12" y="0" width="11" height="11" fill="#7fba00"/>
+                            <rect x="0" y="12" width="11" height="11" fill="#00a4ef"/>
+                            <rect x="12" y="12" width="11" height="11" fill="#ffb900"/>
+                        </svg>
+                        Sign in with Microsoft
+                    </a>
+                </div>
 
-                    <div class="mb-4">
-                        <label for="password" class="form-label">Password</label>
-                        <div class="input-group">
-                            <span class="input-group-text bg-secondary border-secondary"><i
-                                    class="bi bi-key"></i></span>
-                            <input type="password" class="form-control" id="password" name="password" required>
-                        </div>
-                    </div>
+                <!-- Toggle for Username/Password Login -->
+                <div class="text-center my-3">
+                    <button class="btn btn-link btn-sm text-decoration-none text-muted" type="button" data-bs-toggle="collapse" data-bs-target="#localLoginForm" aria-expanded="false" aria-controls="localLoginForm" id="toggleLocalLoginBtn">
+                        <i class="bi bi-chevron-down me-1"></i> Show other sign-in options
+                    </button>
+                </div>
 
-                    <div class="d-grid gap-2 mb-3">
-                        <button class="btn btn-primary" type="submit">
-                            Sign In
-                        </button>
-                    </div>
+                <!-- Username/Password Form Collapsed by Default -->
+                <div class="collapse" id="localLoginForm">
+                    <div class="border-top border-secondary pt-3 mt-2">
+                        <form action="{{ url_for('auth.login') }}" method="post" class="needs-validation" novalidate>
+                            <div class="mb-3">
+                                <label for="email" class="form-label text-light-emphasis">Email address</label>
+                                <div class="input-group">
+                                    <span class="input-group-text bg-secondary border-secondary"><i class="bi bi-envelope"></i></span>
+                                    <input type="email" class="form-control" id="email" name="email" required placeholder="name@company.com">
+                                </div>
+                            </div>
 
-                    <div class="text-center text-muted mb-3">
-                        <small>— OR —</small>
-                    </div>
+                            <div class="mb-4">
+                                <label for="password" class="form-label text-light-emphasis">Password</label>
+                                <div class="input-group">
+                                    <span class="input-group-text bg-secondary border-secondary"><i class="bi bi-key"></i></span>
+                                    <input type="password" class="form-control" id="password" name="password" required>
+                                </div>
+                            </div>
 
-                    <div class="d-grid gap-2">
-                        <a href="{{ url_for('auth.login_sso') }}" class="btn btn-outline-secondary">
-                            <i class="bi bi-microsoft"></i> Sign in with Microsoft
-                        </a>
+                            <div class="d-grid gap-2">
+                                <button class="btn btn-outline-primary" type="submit">
+                                    Sign In with Password
+                                </button>
+                            </div>
+                        </form>
                     </div>
-                </form>
+                </div>
             </div>
         </div>
     </div>
 </div>
+
+<style>
+    .btn-microsoft {
+        background-color: #2f2f2f;
+        color: #ffffff;
+        border: 1px solid #4f4f4f;
+        transition: all 0.2s ease-in-out;
+        padding-top: 0.6rem;
+        padding-bottom: 0.6rem;
+    }
+    .btn-microsoft:hover {
+        background-color: #ffffff;
+        color: #000000;
+        border-color: #ffffff;
+    }
+    .btn-link:hover {
+        color: #ffffff !important;
+    }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const localLoginForm = document.getElementById('localLoginForm');
+        const toggleBtn = document.getElementById('toggleLocalLoginBtn');
+        
+        localLoginForm.addEventListener('show.bs.collapse', function () {
+            toggleBtn.innerHTML = '<i class="bi bi-chevron-up me-1"></i> Hide other sign-in options';
+            // Auto-focus email field after transition completes
+            setTimeout(() => {
+                const emailInput = document.getElementById('email');
+                if (emailInput) emailInput.focus();
+            }, 350);
+        });
+        
+        localLoginForm.addEventListener('hide.bs.collapse', function () {
+            toggleBtn.innerHTML = '<i class="bi bi-chevron-down me-1"></i> Show other sign-in options';
+        });
+    });
+</script>
 {% endblock %}
