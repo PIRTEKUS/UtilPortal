@@ -1,3 +1,4 @@
+import json
 import os
 import zipfile
 import shutil
@@ -257,8 +258,17 @@ def create_module():
         new_module.object_type = request.form.get('object_type')
         new_module.database_name = request.form.get('database_name')
         new_module.stored_proc_name = request.form.get('stored_proc_name')
-        new_module.parameters_json = request.form.get('parameters_json')
-        
+        raw_params_json = request.form.get('parameters_json', '').strip()
+        if raw_params_json:
+            try:
+                json.loads(raw_params_json)  # validate before storing
+                new_module.parameters_json = raw_params_json
+            except json.JSONDecodeError as je:
+                flash(f'Parameters JSON is invalid: {je}. Module not saved.', 'danger')
+                return redirect(url_for('admin.modules'))
+        else:
+            new_module.parameters_json = None
+
     db.session.add(new_module)
     db.session.commit()
     flash(f'Module "{new_module.name}" created successfully.', 'success')
@@ -302,7 +312,16 @@ def edit_module(module_id):
         module.object_type = request.form.get('object_type')
         module.database_name = request.form.get('database_name')
         module.stored_proc_name = request.form.get('stored_proc_name')
-        module.parameters_json = request.form.get('parameters_json')
+        raw_params_json = request.form.get('parameters_json', '').strip()
+        if raw_params_json:
+            try:
+                json.loads(raw_params_json)  # validate before storing
+                module.parameters_json = raw_params_json
+            except json.JSONDecodeError as je:
+                flash(f'Parameters JSON is invalid: {je}. Changes not saved.', 'danger')
+                return redirect(url_for('admin.modules'))
+        else:
+            module.parameters_json = None
         module.custom_code = None
         module.is_python_folder = False
         

@@ -302,8 +302,14 @@ def execute(module_id):
     # Standard Module (Generic parameter form to Stored Procedure)
     try:
         parameters = json.loads(module.parameters_json) if module.parameters_json else []
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as je:
         parameters = []
+        flash(
+            f'⚠️ The Parameters JSON stored for this module is invalid ({je}). '
+            f'Parameters will be fetched live from SQL Server instead. '
+            f'Please fix the Parameters JSON field in the module settings.',
+            'warning'
+        )
         
     connection_model = ServerConnection.query.get(module.connection_id) if getattr(module, 'connection_id', None) else None
     
