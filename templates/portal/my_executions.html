@@ -107,10 +107,10 @@
                             {% endif %}
                         </td>
                         <td class="fw-semibold">{{ log.module.name if log.module else '—' }}</td>
-                        <td class="small text-nowrap">
+                        <td class="small text-nowrap" id="started-{{ log.id }}">
                             {{ log.timestamp.strftime('%Y-%m-%d %H:%M:%S') if log.timestamp else '—' }}
                         </td>
-                        <td class="small text-nowrap">
+                        <td class="small text-nowrap" id="finished-{{ log.id }}">
                             {% if log.end_time %}
                                 {{ log.end_time.strftime('%Y-%m-%d %H:%M:%S') }}
                             {% elif log.status == 'running' %}
@@ -119,7 +119,7 @@
                                 —
                             {% endif %}
                         </td>
-                        <td class="small">
+                        <td class="small text-nowrap" id="duration-{{ log.id }}">
                             {% if log.end_time and log.timestamp %}
                                 {% set delta = (log.end_time - log.timestamp).total_seconds() | int %}
                                 {% if delta >= 3600 %}
@@ -170,10 +170,16 @@
                                         </label>
                                         <div class="position-relative">
                                             <pre class="bg-dark text-light p-3 rounded small mb-0" style="max-height:180px; overflow-y:auto; white-space:pre-wrap; word-break:break-all;" id="sql-{{ log.id }}">{{ log.message or 'No details available.' }}</pre>
-                                            <button class="btn btn-sm btn-outline-light position-absolute top-0 end-0 m-2"
-                                                    onclick="event.stopPropagation(); copySQL({{ log.id }})" title="Copy to clipboard">
-                                                <i class="bi bi-clipboard"></i>
-                                            </button>
+                                            <div class="position-absolute top-0 end-0 m-2 d-flex gap-2">
+                                                <button class="btn btn-sm btn-outline-info"
+                                                        onclick="event.stopPropagation(); copyDiagnostics({{ log.id }}, '{{ (log.module.name if log.module else '—')|escape }}', '{{ (log.user.email if log.user else '—')|escape }}', '{{ log.status }}')" title="Copy diagnostics for sharing">
+                                                    <i class="bi bi-share me-1"></i>Copy Share Log
+                                                </button>
+                                                <button class="btn btn-sm btn-outline-light"
+                                                        onclick="event.stopPropagation(); copySQL({{ log.id }})" title="Copy message output">
+                                                    <i class="bi bi-clipboard"></i>
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
                                     <!-- Parameters Used -->
@@ -182,21 +188,23 @@
                                             <i class="bi bi-sliders me-1"></i>Parameters Used
                                         </label>
                                         {% if log.parameters_used %}
-                                        {% set params = log.parameters_used | tojson | safe %}
-                                        <pre class="bg-dark text-light p-3 rounded small mb-0" style="max-height:180px; overflow-y:auto; white-space:pre-wrap;">{{ log.parameters_used }}</pre>
+                                        <pre class="bg-dark text-light p-3 rounded small mb-0" style="max-height:180px; overflow-y:auto; white-space:pre-wrap;" id="params-{{ log.id }}">{{ log.parameters_used }}</pre>
                                         {% else %}
-                                        <div class="text-muted small fst-italic">No parameters</div>
+                                        <div class="text-muted small fst-italic" id="params-{{ log.id }}">{}</div>
                                         {% endif %}
                                         
-                                        <!-- Connection info -->
-                                        {% if log.module and log.module.stored_proc_name %}
-                                        <div class="mt-2">
+                                        <!-- Connection & Execution Metadata info -->
+                                        <div class="mt-2 small text-muted">
+                                            {% if log.pid %}
+                                            <span class="badge bg-dark border border-secondary text-light me-1">PID: <span id="pid-{{ log.id }}">{{ log.pid }}</span></span>
+                                            {% endif %}
+                                            {% if log.module and log.module.stored_proc_name %}
                                             <span class="badge bg-secondary me-1">SP: {{ log.module.stored_proc_name }}</span>
                                             {% if log.module.database_name %}
                                             <span class="badge bg-secondary">DB: {{ log.module.database_name }}</span>
                                             {% endif %}
+                                            {% endif %}
                                         </div>
-                                        {% endif %}
                                     </div>
                                 </div>
                             </div>
@@ -240,13 +248,61 @@
         
         navigator.clipboard.writeText(text).then(function() {
             // Brief visual feedback
-            var btn = pre.parentElement.querySelector('button');
+            var btn = pre.parentElement.querySelector('button:last-child');
             var origHTML = btn.innerHTML;
             btn.innerHTML = '<i class="bi bi-check-lg"></i>';
             btn.classList.replace('btn-outline-light', 'btn-success');
             setTimeout(function() {
                 btn.innerHTML = origHTML;
                 btn.classList.replace('btn-success', 'btn-outline-light');
+            }, 1500);
+        });
+    }
+
+    // Copy Diagnostics to clipboard
+    function copyDiagnostics(logId, moduleName, userEmail, status) {
+        const message = document.getElementById('sql-' + logId)?.textContent || '';
+        const paramsText = document.getElementById('params-' + logId)?.textContent || '{}';
+        const started = document.getElementById('started-' + logId)?.textContent.trim() || '—';
+        const finished = document.getElementById('finished-' + logId)?.textContent.trim() || '—';
+        const duration = document.getElementById('duration-' + logId)?.textContent.trim() || '—';
+        const pid = document.getElementById('pid-' + logId)?.textContent.trim() || '—';
+
+        // Prettify params if valid JSON
+        let prettyParams = paramsText;
+        try {
+            prettyParams = JSON.stringify(JSON.parse(paramsText), null, 2);
+        } catch (e) {}
+
+        const shareText = `### UTILPORTAL DIAGNOSTICS REPORT
+- **Log ID**: #${logId}
+- **Status**: ${status}
+- **Module**: ${moduleName}
+- **User**: ${userEmail}
+- **PID**: ${pid}
+- **Started**: ${started}
+- **Finished**: ${finished}
+- **Duration**: ${duration}
+
+#### Parameters Used:
+\`\`\`json
+${prettyParams}
+\`\`\`
+
+#### Execution Message / Console Output:
+\`\`\`
+${message}
+\`\`\`
+`;
+
+        navigator.clipboard.writeText(shareText).then(function() {
+            const btn = event.currentTarget || document.activeElement;
+            const origHTML = btn.innerHTML;
+            btn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Copied!';
+            btn.classList.replace('btn-outline-info', 'btn-success');
+            setTimeout(function() {
+                btn.innerHTML = origHTML;
+                btn.classList.replace('btn-success', 'btn-outline-info');
             }, 1500);
         });
     }

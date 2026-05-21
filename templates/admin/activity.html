@@ -122,16 +122,21 @@
                         </td>
                         <td class="small text-muted">{{ log.message or '—' }}</td>
                         <td class="text-end">
-                            {% if log.status == 'running' and log.pid %}
-                            <form action="{{ url_for('admin.stop_activity', log_id=log.id) }}" method="post" class="d-inline"
-                                  onsubmit="return confirm('Are you sure you want to forcefully stop this execution?');">
-                                <button type="submit" class="btn btn-sm btn-outline-danger">
-                                    <i class="bi bi-stop-circle me-1"></i>Stop
+                            <div class="d-flex justify-content-end gap-2">
+                                <button class="btn btn-sm btn-outline-info" onclick="showDiagnostics({{ log.id }})">
+                                    <i class="bi bi-bug me-1"></i>Debug
                                 </button>
-                            </form>
-                            {% else %}
-                                —
-                            {% endif %}
+                                {% if log.status == 'running' and log.pid %}
+                                <form action="{{ url_for('admin.stop_activity', log_id=log.id) }}" method="post" class="d-inline mb-0"
+                                      onsubmit="return confirm('Are you sure you want to forcefully stop this execution?');">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger">
+                                        <i class="bi bi-stop-circle me-1"></i>Stop
+                                    </button>
+                                </form>
+                                {% else %}
+                                    &nbsp;
+                                {% endif %}
+                            </div>
                         </td>
                     </tr>
                     {% else %}
@@ -144,6 +149,105 @@
                     {% endfor %}
                 </tbody>
             </table>
+        </div>
+    </div>
+</div>
+
+<!-- Diagnostics Modal -->
+<div class="modal fade" id="diagnosticsModal" tabindex="-1" aria-labelledby="diagnosticsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content bg-dark text-light border-secondary">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title fw-bold text-info" id="diagnosticsModalLabel">
+                    <i class="bi bi-bug me-2"></i>Execution Diagnostics #<span id="m-log-id"></span>
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-3 mb-4">
+                    <div class="col-md-6">
+                        <table class="table table-dark table-borderless table-sm mb-0 small">
+                            <tbody>
+                                <tr>
+                                    <td class="text-muted" style="width:120px">Module:</td>
+                                    <td id="m-module" class="fw-semibold text-info"></td>
+                                </tr>
+                                <tr>
+                                    <td class="text-muted">Type:</td>
+                                    <td id="m-type" class="text-white-50"></td>
+                                </tr>
+                                <tr>
+                                    <td class="text-muted">User:</td>
+                                    <td id="m-user" class="text-white-50"></td>
+                                </tr>
+                                <tr>
+                                    <td class="text-muted">Status:</td>
+                                    <td><span id="m-status-badge" class="badge"></span></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="col-md-6">
+                        <table class="table table-dark table-borderless table-sm mb-0 small">
+                            <tbody>
+                                <tr>
+                                    <td class="text-muted" style="width:120px">Started:</td>
+                                    <td id="m-started" class="text-white-50"></td>
+                                </tr>
+                                <tr>
+                                    <td class="text-muted">Finished:</td>
+                                    <td id="m-finished" class="text-white-50"></td>
+                                </tr>
+                                <tr>
+                                    <td class="text-muted">Duration:</td>
+                                    <td id="m-duration" class="text-warning"></td>
+                                </tr>
+                                <tr>
+                                    <td class="text-muted">PID:</td>
+                                    <td id="m-pid" class="text-white-50"></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Parameters Section -->
+                <div class="mb-3">
+                    <label class="form-label small fw-bold text-muted mb-1">
+                        <i class="bi bi-sliders me-1"></i>Parameters Used
+                    </label>
+                    <pre class="bg-black p-3 rounded small text-info border border-secondary" id="m-params" style="max-height: 150px; overflow-y: auto; font-family: monospace;"></pre>
+                </div>
+
+                <!-- Connection Section (only visible if applicable) -->
+                <div class="mb-3 d-none" id="m-conn-section">
+                    <label class="form-label small fw-bold text-muted mb-1">
+                        <i class="bi bi-hdd-network me-1"></i>Database Connection
+                    </label>
+                    <div class="bg-black p-2 rounded small text-muted border border-secondary">
+                        Connection Name: <span class="text-white fw-semibold" id="m-conn-name"></span> &nbsp;|&nbsp; Host: <span class="text-white fw-semibold" id="m-conn-host"></span>
+                    </div>
+                </div>
+
+                <!-- Execution Output Section -->
+                <div class="mb-0">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <label class="form-label small fw-bold text-muted mb-0">
+                            <i class="bi bi-terminal me-1"></i>Execution Message / Output Log
+                        </label>
+                        <button class="btn btn-sm btn-outline-info py-0 px-2" onclick="copyModalConsole()" style="font-size: 0.75rem;" id="btn-copy-output">
+                            <i class="bi bi-clipboard me-1"></i>Copy Output
+                        </button>
+                    </div>
+                    <pre class="bg-black p-3 rounded small text-white border border-secondary mb-0" id="m-output" style="max-height: 300px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; font-family: monospace;"></pre>
+                </div>
+            </div>
+            <div class="modal-footer border-secondary justify-content-between">
+                <button type="button" class="btn btn-outline-info" onclick="copyModalDiagnostics()" id="btn-copy-diagnostics">
+                    <i class="bi bi-share me-1"></i>Copy Diagnostics for Sharing
+                </button>
+                <button type="button" class="btn btn-outline-secondary text-light" data-bs-dismiss="modal">Close</button>
+            </div>
         </div>
     </div>
 </div>
@@ -169,5 +273,107 @@
             clearInterval(refreshInterval);
         }
     });
+
+    let currentDiagnostics = null;
+
+    function showDiagnostics(logId) {
+        fetch(`/admin/activity/${logId}/details`)
+            .then(res => res.json())
+            .then(data => {
+                currentDiagnostics = data;
+                
+                document.getElementById('m-log-id').textContent = data.id;
+                document.getElementById('m-module').textContent = data.module_name;
+                document.getElementById('m-type').textContent = data.module_type;
+                document.getElementById('m-user').textContent = data.user_email;
+                document.getElementById('m-started').textContent = data.started;
+                document.getElementById('m-finished').textContent = data.finished;
+                document.getElementById('m-duration').textContent = data.duration;
+                document.getElementById('m-pid').textContent = data.pid || '—';
+                
+                const badge = document.getElementById('m-status-badge');
+                badge.className = 'badge';
+                if (data.status === 'running') {
+                    badge.classList.add('bg-warning', 'text-dark');
+                    badge.innerHTML = '<i class="bi bi-arrow-repeat me-1 spin"></i>Running';
+                } else if (data.status === 'success') {
+                    badge.classList.add('bg-success');
+                    badge.innerHTML = '<i class="bi bi-check-circle me-1"></i>Success';
+                } else {
+                    badge.classList.add('bg-danger');
+                    badge.innerHTML = '<i class="bi bi-x-circle me-1"></i>Error';
+                }
+                
+                document.getElementById('m-params').textContent = JSON.stringify(data.parameters, null, 2);
+                
+                const connSec = document.getElementById('m-conn-section');
+                if (data.connection_name) {
+                    connSec.classList.remove('d-none');
+                    document.getElementById('m-conn-name').textContent = data.connection_name;
+                    document.getElementById('m-conn-host').textContent = data.connection_host;
+                } else {
+                    connSec.classList.add('d-none');
+                }
+                
+                document.getElementById('m-output').textContent = data.message || 'No details available.';
+                
+                const modalEl = document.getElementById('diagnosticsModal');
+                const modal = new bootstrap.Modal(modalEl);
+                modal.show();
+            })
+            .catch(err => {
+                alert('Error loading diagnostics details: ' + err);
+            });
+    }
+
+    function copyModalConsole() {
+        if (!currentDiagnostics) return;
+        const text = currentDiagnostics.message || '';
+        navigator.clipboard.writeText(text).then(() => {
+            const btn = document.getElementById('btn-copy-output');
+            const origHTML = btn.innerHTML;
+            btn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Copied Output!';
+            btn.classList.replace('btn-outline-info', 'btn-success');
+            setTimeout(() => {
+                btn.innerHTML = origHTML;
+                btn.classList.replace('btn-success', 'btn-outline-info');
+            }, 1500);
+        });
+    }
+
+    function copyModalDiagnostics() {
+        if (!currentDiagnostics) return;
+        const d = currentDiagnostics;
+        const shareText = `### UTILPORTAL DIAGNOSTICS REPORT
+- **Log ID**: #${d.id}
+- **Status**: ${d.status}
+- **Module**: ${d.module_name} (${d.module_type})
+- **User**: ${d.user_email}
+- **PID**: ${d.pid || '—'}
+- **Started**: ${d.started}
+- **Finished**: ${d.finished}
+- **Duration**: ${d.duration}
+
+#### Parameters Used:
+\`\`\`json
+${JSON.stringify(d.parameters, null, 2)}
+\`\`\`
+
+#### Execution Message / Console Output:
+\`\`\`
+${d.message || ''}
+\`\`\`
+`;
+        navigator.clipboard.writeText(shareText).then(() => {
+            const btn = document.getElementById('btn-copy-diagnostics');
+            const origHTML = btn.innerHTML;
+            btn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Copied Report!';
+            btn.classList.replace('btn-outline-info', 'btn-success');
+            setTimeout(() => {
+                btn.innerHTML = origHTML;
+                btn.classList.replace('btn-success', 'btn-outline-info');
+            }, 1500);
+        });
+    }
 </script>
 {% endblock %}

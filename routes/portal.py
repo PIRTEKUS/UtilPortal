@@ -605,6 +605,14 @@ def execute_python_stream(module_id):
         cwd = os.getcwd()
         python_executable = sys.executable
         log_id = None
+        execution_logs = []
+
+        def log_yield(msg, append_newline=True):
+            if append_newline:
+                execution_logs.append(msg + "\n")
+            else:
+                execution_logs.append(msg)
+            return f"data: {msg}\n\n"
 
         # --- Create an AuditLog entry with status='running' ---
         try:
@@ -629,7 +637,7 @@ def execute_python_stream(module_id):
                 entry_file = entry_file.replace('..', '').lstrip('/')
                 script_to_run = os.path.join(cwd, entry_file)
                 if not os.path.exists(script_to_run):
-                    yield f"data: ERROR: Entry file '{entry_file}' not found in uploaded zip.\n\n"
+                    yield log_yield(f"ERROR: Entry file '{entry_file}' not found in uploaded zip.")
                     return
             elif module.custom_code:
                 cwd = tempfile.mkdtemp(prefix=f"module_{module.id}_")
@@ -647,12 +655,12 @@ def execute_python_stream(module_id):
                 venv_pip = os.path.join(venv_dir, 'bin', 'pip')
 
             if not os.path.exists(venv_dir):
-                yield f"data: [Setup] Creating isolated virtual environment...\n\n"
+                yield log_yield("[Setup] Creating isolated virtual environment...")
                 subprocess.run([sys.executable, "-m", "venv", "venv"], cwd=cwd, check=True)
 
                 req_file = os.path.join(cwd, 'requirements.txt')
                 if not os.path.exists(req_file):
-                    yield f"data: [Setup] No requirements.txt found. Scanning imports to generate one...\n\n"
+                    yield log_yield("[Setup] No requirements.txt found. Scanning imports to generate one...")
                     subprocess.run(
                         [venv_pip, "install", "--no-cache-dir", "--quiet", "pipreqs"],
                         cwd=cwd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
@@ -668,19 +676,19 @@ def execute_python_stream(module_id):
                         for line in iter(req_proc.stdout.readline, ''):
                             stripped = line.strip()
                             if stripped:
-                                yield f"data: [pipreqs] {stripped}\n\n"
+                                yield log_yield(f"[pipreqs] {stripped}")
                         req_proc.wait()
                     else:
-                        yield f"data: [Setup] pipreqs binary not found after install, skipping.\n\n"
+                        yield log_yield("[Setup] pipreqs binary not found after install, skipping.")
 
                     if os.path.exists(req_file):
-                        yield f"data: [Setup] requirements.txt generated successfully.\n\n"
+                        yield log_yield("[Setup] requirements.txt generated successfully.")
                     else:
-                        yield f"data: [Setup] WARNING: Could not auto-generate requirements.txt.\n\n"
+                        yield log_yield("[Setup] WARNING: Could not auto-generate requirements.txt.")
                         open(req_file, 'w').close()
 
                 if os.path.exists(req_file) and os.path.getsize(req_file) > 0:
-                    yield f"data: [Setup] Installing dependencies...\n\n"
+                    yield log_yield("[Setup] Installing dependencies...")
                     pip_proc = subprocess.Popen(
                         [venv_pip, "install", "--no-cache-dir", "-r", "requirements.txt"],
                         cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -689,13 +697,13 @@ def execute_python_stream(module_id):
                     for line in iter(pip_proc.stdout.readline, ''):
                         stripped = line.strip()
                         if stripped:
-                            yield f"data: [pip] {stripped}\n\n"
+                            yield log_yield(f"[pip] {stripped}")
                     pip_proc.wait()
-                yield f"data: [Setup] Environment ready.\n\n"
+                yield log_yield("[Setup] Environment ready.")
 
             python_executable = venv_python
 
-            yield f"data: Starting execution of module: {module.name}...\n\n"
+            yield log_yield(f"Starting execution of module: {module.name}...")
 
             process = subprocess.Popen(
                 [python_executable, "-u", script_to_run],
@@ -737,20 +745,20 @@ def execute_python_stream(module_id):
                 try:
                     kind, payload = out_queue.get(timeout=15)
                     if kind == 'data':
-                        yield f"data: {payload}\n\n"
+                        yield log_yield(payload, append_newline=False)
                     elif kind == 'done':
                         exit_code = payload
                         yield f"data: \n\n"
-                        yield f"data: Process exited with code {payload}\n\n"
+                        yield log_yield(f"Process exited with code {payload}")
                         break
                     elif kind == 'error':
-                        yield f"data: ERROR: {payload}\n\n"
+                        yield log_yield(f"ERROR: {payload}")
                         break
                 except _queue.Empty:
                     yield ": keepalive\n\n"
 
         except Exception as e:
-            yield f"data: Execution Failed: {str(e)}\n\n"
+            yield log_yield(f"Execution Failed: {str(e)}")
         finally:
             # --- Update AuditLog with end time and final status ---
             if log_id:
@@ -758,8 +766,13 @@ def execute_python_stream(module_id):
                     log = AuditLog.query.get(log_id)
                     if log:
                         log.end_time = datetime.now(_tz.utc)
-                        log.status = 'success' if exit_code == 0 else 'error'
-                        log.message = f'Exited with code {exit_code}.'
+                        # Check if it was killed/stopped externally
+                        if log.status == 'running':
+                            log.status = 'success' if exit_code == 0 else 'error'
+                            log.message = "".join(execution_logs)
+                        else:
+                            # It was cancelled/stopped externally, append the console log so far
+                            log.message = "".join(execution_logs) + f"\n\n[{log.message}]"
                         db.session.commit()
                 except Exception:
                     db.session.rollback()

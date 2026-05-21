@@ -74,6 +74,65 @@ def stop_activity(log_id):
         
     return redirect(url_for('admin.activity'))
 
+@bp.route('/activity/<int:log_id>/details')
+@login_required
+@admin_required
+def activity_details(log_id):
+    log = AuditLog.query.get_or_404(log_id)
+    
+    # Calculate duration
+    duration = None
+    if log.end_time and log.timestamp:
+        delta = (log.end_time - log.timestamp).total_seconds()
+        duration = f"{int(delta)}s"
+        if delta >= 60:
+            duration = f"{int(delta // 60)}m {int(delta % 60)}s"
+            if delta >= 3600:
+                duration = f"{int(delta // 3600)}h {int((delta % 3600) // 60)}m {int(delta % 60)}s"
+                
+    # Determine module type
+    module_type = "Generic SQL"
+    if log.module:
+        if log.module.custom_code or log.module.is_python_folder:
+            module_type = "Python Script"
+        elif log.module.object_type == 'sp':
+            module_type = "Stored Procedure"
+        elif log.module.object_type == 'job':
+            module_type = "SQL Server Job"
+
+    # Connection details
+    conn_name = None
+    conn_host = None
+    if log.module and log.module.connection:
+        conn_name = log.module.connection.name
+        conn_host = log.module.connection.host
+
+    # Safe parameter parsing
+    params = {}
+    if log.parameters_used:
+        try:
+            params = json.loads(log.parameters_used)
+        except Exception:
+            params = log.parameters_used
+
+    return jsonify({
+        'id': log.id,
+        'status': log.status,
+        'module_name': log.module.name if log.module else '—',
+        'module_id': log.module_id,
+        'module_type': module_type,
+        'user_email': log.user.email if log.user else '—',
+        'pid': log.pid,
+        'started': log.timestamp.strftime('%Y-%m-%d %H:%M:%S') if log.timestamp else '—',
+        'finished': log.end_time.strftime('%Y-%m-%d %H:%M:%S') if log.end_time else ('In progress…' if log.status == 'running' else '—'),
+        'duration': duration or ('—' if log.status == 'running' else '0s'),
+        'parameters': params,
+        'message': log.message or '',
+        'connection_name': conn_name,
+        'connection_host': conn_host,
+        'has_results': log.result_data is not None
+    })
+
 # --- CONNECTIONS ---
 @bp.route('/connections')
 @login_required
