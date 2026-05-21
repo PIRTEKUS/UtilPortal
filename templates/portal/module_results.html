@@ -88,7 +88,7 @@
             XLSX.utils.book_append_sheet(wb, ws, sheetName);
         });
         
-        var moduleName = "{{ module.name|replace(' ', '_')|replace('\"', '')|replace(\"'\", '') }}";
+        var moduleName = "{{ module.name|replace(' ', '_')|replace('\"', '')|replace("'", "") }}";
         var dateStr = new Date().toISOString().slice(0,10);
         var filename = moduleName + "_Results_" + dateStr + ".xlsx";
         
