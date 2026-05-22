@@ -10,6 +10,7 @@ from models import Module, AuditLog, ServerConnection, Folder, AppSetting, db
 import pyodbc
 
 bp = Blueprint('portal', __name__)
+active_connections = {}
 
 def get_user_allowed_modules(user):
     if user.is_admin():
@@ -191,13 +192,14 @@ def _build_sql_call(sp_name, parameters, submitted_params, object_type='sp'):
     return f"EXEC {safe_name} {param_str}"
 
 
-def _execute_sp_sync(module, connection_model, parameters, submitted_params):
+def _execute_sp_sync(module, connection_model, parameters, submitted_params, log_id=None):
     """Execute a stored procedure synchronously.
     Returns (result_sets, error_msg, sql_call)."""
     result_sets = []
     error_msg = None
     sql_call = _build_sql_call(module.stored_proc_name, parameters, submitted_params, module.object_type)
     
+    odbc_conn = None
     try:
         conn_str = (
             f"DRIVER={{ODBC Driver 18 for SQL Server}};"
@@ -211,6 +213,8 @@ def _execute_sp_sync(module, connection_model, parameters, submitted_params):
             conn_str += f"DATABASE={module.database_name};"
             
         odbc_conn = pyodbc.connect(conn_str, autocommit=True)
+        if log_id:
+            active_connections[log_id] = odbc_conn
         
         # Configure query execution timeout on the connection (default: 1800s / 30m)
         try:
@@ -222,19 +226,42 @@ def _execute_sp_sync(module, connection_model, parameters, submitted_params):
         
         cursor = odbc_conn.cursor()
         
+        # Query SQL Server SPID and update AuditLog if log_id is provided
+        if log_id:
+            try:
+                cursor.execute("SELECT @@SPID")
+                spid_row = cursor.fetchone()
+                if spid_row:
+                    spid = spid_row[0]
+                    log = AuditLog.query.get(log_id)
+                    if log:
+                        log.pid = spid
+                        db.session.commit()
+            except Exception:
+                pass
+        
         # Apply standard session settings to match SSMS behavior and optimize performance
+        cursor.execute("SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED")
+        cursor.execute("SET NOCOUNT ON")
         cursor.execute("SET ARITHABORT ON")
         cursor.execute("SET ANSI_WARNINGS ON")
         cursor.execute("SET ANSI_NULLS ON")
         cursor.execute("SET QUOTED_IDENTIFIER ON")
         cursor.execute("SET CONCAT_NULL_YIELDS_NULL ON")
+        cursor.execute("SET ANSI_PADDING ON")
+        cursor.execute("SET NUMERIC_ROUNDABORT OFF")
         
         if module.object_type == 'job':
             job_name = module.stored_proc_name
             cursor.execute(f"EXEC msdb.dbo.sp_start_job N'{job_name}'")
         else:
-            # Execute as a direct SQL text string (like SSMS) to prevent parameter sniffing issues with sp_executesql
-            cursor.execute(sql_call)
+            # Append WITH RECOMPILE to prevent parameter sniffing issues with cached plans
+            exec_query = sql_call
+            if module.object_type == 'sp' or not module.object_type:
+                if "WITH RECOMPILE" not in exec_query.upper():
+                    exec_query += " WITH RECOMPILE"
+            
+            cursor.execute(exec_query)
                 
             while True:
                 if cursor.description:
@@ -248,9 +275,16 @@ def _execute_sp_sync(module, connection_model, parameters, submitted_params):
                     break
         
         cursor.close()
-        odbc_conn.close()
     except Exception as e:
         error_msg = str(e)
+    finally:
+        if odbc_conn:
+            try:
+                odbc_conn.close()
+            except Exception:
+                pass
+        if log_id:
+            active_connections.pop(log_id, None)
     
     return result_sets, error_msg, sql_call
 
@@ -275,7 +309,7 @@ def _run_sp_background(app, log_id, module_id, connection_id, db_name, object_ty
         log.message = f'Executing: {sql_call}'
         db.session.commit()
         
-        result_sets, error_msg, _ = _execute_sp_sync(module, connection_model, parameters, submitted_params)
+        result_sets, error_msg, _ = _execute_sp_sync(module, connection_model, parameters, submitted_params, log_id=log_id)
         
         # Check if the execution was cancelled by the user while running
         db.session.refresh(log)
@@ -584,6 +618,14 @@ def stop_execution(log_id):
     log.end_time = dt.now(tz.utc)
     db.session.commit()
     
+    # Close connection if there is an active database connection for this log_id
+    conn_to_close = active_connections.pop(log_id, None)
+    if conn_to_close:
+        try:
+            conn_to_close.close()
+        except Exception:
+            pass
+            
     flash(f'Execution #{log.id} has been cancelled.', 'success')
     return redirect(url_for('portal.my_executions'))
 
