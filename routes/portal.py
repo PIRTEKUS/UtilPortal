@@ -210,6 +210,15 @@ def _execute_sp_sync(module, connection_model, parameters, submitted_params):
             conn_str += f"DATABASE={module.database_name};"
             
         odbc_conn = pyodbc.connect(conn_str, autocommit=True)
+        
+        # Configure query execution timeout on the connection (default: 1800s / 30m)
+        try:
+            timeout_setting = AppSetting.query.filter_by(key='sp_timeout_seconds').first()
+            timeout_val = int(timeout_setting.value) if timeout_setting and timeout_setting.value else 1800
+        except Exception:
+            timeout_val = 1800
+        odbc_conn.timeout = timeout_val
+        
         cursor = odbc_conn.cursor()
         
         # Apply standard session settings to match SSMS behavior and optimize performance
@@ -218,14 +227,6 @@ def _execute_sp_sync(module, connection_model, parameters, submitted_params):
         cursor.execute("SET ANSI_NULLS ON")
         cursor.execute("SET QUOTED_IDENTIFIER ON")
         cursor.execute("SET CONCAT_NULL_YIELDS_NULL ON")
-        
-        # Configure cursor/query execution timeout (default: 1800s / 30m)
-        try:
-            timeout_setting = AppSetting.query.filter_by(key='sp_timeout_seconds').first()
-            timeout_val = int(timeout_setting.value) if timeout_setting and timeout_setting.value else 1800
-        except Exception:
-            timeout_val = 1800
-        cursor.timeout = timeout_val
         
         if module.object_type == 'job':
             job_name = module.stored_proc_name
