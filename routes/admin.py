@@ -515,7 +515,7 @@ def settings():
 
     if request.method == 'POST':
         # Save text fields
-        for field in ['company_name', 'company_tagline', 'company_email', 'navbar_bg_color', 'navbar_font_color', 'results_retention_days']:
+        for field in ['company_name', 'company_tagline', 'company_email', 'navbar_bg_color', 'navbar_font_color', 'results_retention_days', 'sp_timeout_seconds']:
             val = request.form.get(field, '').strip()
             save_setting(field, val)
 
@@ -540,4 +540,5 @@ def settings():
         navbar_bg_color=get_setting('navbar_bg_color') or '#ffffff',
         navbar_font_color=get_setting('navbar_font_color') or '#212529',
         results_retention_days=get_setting('results_retention_days') or '7',
+        sp_timeout_seconds=get_setting('sp_timeout_seconds') or '1800',
     )
