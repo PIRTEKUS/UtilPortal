@@ -183,8 +183,9 @@ def _build_sql_call(sp_name, parameters, submitted_params, object_type='sp'):
         elif isinstance(val, (int, float)):
             parts.append(str(val))
         else:
-            # Quote strings/datetimes
-            parts.append(f"'{val}'")
+            # Escape single quotes and quote strings/datetimes
+            escaped_val = str(val).replace("'", "''")
+            parts.append(f"'{escaped_val}'")
     
     param_str = ', '.join(parts)
     return f"EXEC {safe_name} {param_str}"
@@ -232,13 +233,8 @@ def _execute_sp_sync(module, connection_model, parameters, submitted_params):
             job_name = module.stored_proc_name
             cursor.execute(f"EXEC msdb.dbo.sp_start_job N'{job_name}'")
         else:
-            safe_name = _safe_sp_name(module.stored_proc_name)
-            if parameters:
-                params_list = [submitted_params.get(p['name']) for p in parameters]
-                placeholders = ",".join(["?" for _ in params_list])
-                cursor.execute(f"EXEC {safe_name} {placeholders}", params_list)
-            else:
-                cursor.execute(f"EXEC {safe_name}")
+            # Execute as a direct SQL text string (like SSMS) to prevent parameter sniffing issues with sp_executesql
+            cursor.execute(sql_call)
                 
             while True:
                 if cursor.description:
