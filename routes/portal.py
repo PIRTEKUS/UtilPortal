@@ -194,10 +194,12 @@ def _build_sql_call(sp_name, parameters, submitted_params, object_type='sp'):
 
 def _execute_sp_sync(module, connection_model, parameters, submitted_params, log_id=None):
     """Execute a stored procedure synchronously.
-    Returns (result_sets, error_msg, sql_call)."""
+    Returns (result_sets, error_msg, sql_call, sql_messages)."""
     result_sets = []
     error_msg = None
     sql_call = _build_sql_call(module.stored_proc_name, parameters, submitted_params, module.object_type)
+    sql_messages = []
+    seen_messages = set()
     
     odbc_conn = None
     try:
@@ -251,9 +253,25 @@ def _execute_sp_sync(module, connection_model, parameters, submitted_params, log
         cursor.execute("SET ANSI_PADDING ON")
         cursor.execute("SET NUMERIC_ROUNDABORT OFF")
         
+        def collect_messages():
+            if hasattr(cursor, 'messages') and cursor.messages:
+                for msg in cursor.messages:
+                    if isinstance(msg, (list, tuple)) and len(msg) >= 2:
+                        msg_text = msg[1]
+                    else:
+                        msg_text = str(msg)
+                    if msg_text not in seen_messages:
+                        seen_messages.add(msg_text)
+                        clean_msg = msg_text
+                        if '[SQL Server]' in clean_msg:
+                            clean_msg = clean_msg.split('[SQL Server]', 1)[1]
+                        clean_msg = clean_msg.strip()
+                        sql_messages.append(clean_msg)
+        
         if module.object_type == 'job':
             job_name = module.stored_proc_name
             cursor.execute(f"EXEC msdb.dbo.sp_start_job N'{job_name}'")
+            collect_messages()
         else:
             # Append WITH RECOMPILE to prevent parameter sniffing issues with cached plans
             exec_query = sql_call
@@ -262,6 +280,7 @@ def _execute_sp_sync(module, connection_model, parameters, submitted_params, log
                     exec_query += " WITH RECOMPILE"
             
             cursor.execute(exec_query)
+            collect_messages()
                 
             while True:
                 if cursor.description:
@@ -271,12 +290,19 @@ def _execute_sp_sync(module, connection_model, parameters, submitted_params, log
                         'columns': columns,
                         'rows': [dict(zip(columns, row)) for row in rows]
                     })
+                collect_messages()
                 if not cursor.nextset():
                     break
+                collect_messages()
         
         cursor.close()
     except Exception as e:
         error_msg = str(e)
+        try:
+            if 'cursor' in locals() and cursor:
+                collect_messages()
+        except Exception:
+            pass
     finally:
         if odbc_conn:
             try:
@@ -286,7 +312,7 @@ def _execute_sp_sync(module, connection_model, parameters, submitted_params, log
         if log_id:
             active_connections.pop(log_id, None)
     
-    return result_sets, error_msg, sql_call
+    return result_sets, error_msg, sql_call, sql_messages
 
 
 def _run_sp_background(app, log_id, module_id, connection_id, db_name, object_type,
@@ -309,7 +335,7 @@ def _run_sp_background(app, log_id, module_id, connection_id, db_name, object_ty
         log.message = f'Executing: {sql_call}'
         db.session.commit()
         
-        result_sets, error_msg, _ = _execute_sp_sync(module, connection_model, parameters, submitted_params, log_id=log_id)
+        result_sets, error_msg, _, sql_messages = _execute_sp_sync(module, connection_model, parameters, submitted_params, log_id=log_id)
         
         # Check if the execution was cancelled by the user while running
         db.session.refresh(log)
@@ -319,13 +345,18 @@ def _run_sp_background(app, log_id, module_id, connection_id, db_name, object_ty
         log.end_time = dt.now(tz.utc)
         if error_msg:
             log.status = 'error'
-            log.message = f'SQL: {sql_call}\n\nError: {error_msg}'
+            log_msg = f'SQL: {sql_call}\n\nError: {error_msg}'
+            if sql_messages:
+                log_msg += f'\n\nSQL Messages:\n' + '\n'.join(sql_messages)
+            log.message = log_msg
         else:
             log.status = 'success'
             log_msg = f'Executed successfully.'
             if result_sets:
                 log_msg += f' Returned {len(result_sets)} result set(s).'
             log_msg += f'\n\nSQL: {sql_call}'
+            if sql_messages:
+                log_msg += f'\n\nSQL Messages:\n' + '\n'.join(sql_messages)
             log.message = log_msg
             if result_sets:
                 log.result_data = json.dumps(result_sets, default=str)
@@ -452,10 +483,11 @@ def execute(module_id):
         
         # --- SYNCHRONOUS EXECUTION (Execute & Wait) ---
         result_sets = []
+        sql_messages = []
             
         try:
             if connection_model and connection_model.server_type == 'sqlserver':
-                result_sets, error_msg, sql_call = _execute_sp_sync(module, connection_model, parameters, submitted_params)
+                result_sets, error_msg, sql_call, sql_messages = _execute_sp_sync(module, connection_model, parameters, submitted_params)
                 
                 if error_msg:
                     raise Exception(error_msg)
@@ -468,6 +500,9 @@ def execute(module_id):
             log_msg = 'Executed successfully.'
             if result_sets:
                 log_msg += f' Returned {len(result_sets)} result set(s).'
+            log_msg += f'\n\nSQL: {sql_call}'
+            if sql_messages:
+                log_msg += f'\n\nSQL Messages:\n' + '\n'.join(sql_messages)
                 
             log = AuditLog(user_id=current_user.id, module_id=module.id, 
                            parameters_used=json.dumps(submitted_params, default=str),
@@ -484,9 +519,14 @@ def execute(module_id):
             
         except Exception as e:
             error_msg = str(e)
+            log_msg = f'Error executing module: {error_msg}'
+            if 'sql_call' in locals():
+                log_msg = f'SQL: {sql_call}\n\nError: {error_msg}'
+            if sql_messages:
+                log_msg += f'\n\nSQL Messages:\n' + '\n'.join(sql_messages)
             log = AuditLog(user_id=current_user.id, module_id=module.id, 
                            parameters_used=json.dumps(submitted_params, default=str),
-                           status='error', message=error_msg,
+                           status='error', message=log_msg,
                            end_time=dt.now(tz.utc), notified=True)
             db.session.add(log)
             db.session.commit()
