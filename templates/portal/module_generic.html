@@ -291,7 +291,10 @@
                                         onclick="document.getElementById('backgroundField').value='1';">
                                         <i class="bi bi-arrow-left-right me-1"></i>Run in Background
                                     </button>
-                                    <button type="submit" class="btn btn-danger" id="confirmSubmitBtn">
+                                    <button type="submit" class="btn btn-danger" id="confirmSubmitBtn"
+                                         {% if exec_stats.recommendation == 'background' and exec_stats.avg_duration %}
+                                         onclick="return confirm('⚠️ Warning: This stored procedure takes an average of {% if exec_stats.avg_duration >= 60 %}{{ exec_stats.avg_duration // 60 }}m {% endif %}{{ exec_stats.avg_duration % 60 }}s. Running in \'Execute & Wait\' mode may exceed the web server gateway timeout and show a Timeout page. It is highly recommended to run this in the background instead.\n\nAre you sure you want to proceed with Execute & Wait?');"
+                                         {% endif %}>
                                         <i class="bi bi-hourglass-split me-1"></i>Execute & Wait
                                     </button>
                                 </div>

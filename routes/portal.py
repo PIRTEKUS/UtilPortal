@@ -454,6 +454,16 @@ def execute(module_id):
             flash(f"Warning: Could not fetch parameters dynamically from SP: {str(e)}", "warning")
             
     if request.method == 'POST':
+        # Check if this module is already running to prevent concurrent runs
+        running_log = AuditLog.query.filter_by(module_id=module.id, status='running').first()
+        if running_log:
+            flash(
+                f'⚠️ "{module.name}" is already running (Execution #{running_log.id}). '
+                f'Please wait for it to complete or cancel it from "My Executions" before running it again.',
+                'warning'
+            )
+            return redirect(url_for('portal.execute', module_id=module.id))
+
         submitted_params = _parse_submitted_params(parameters, request.form)
         run_in_background = request.form.get('background') == '1'
         
