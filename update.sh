@@ -18,7 +18,8 @@ git fetch --all
 echo "[2/5] Resetting to origin/main (discarding local changes)..."
 git reset --hard origin/main
 
-echo "[3/5] Running database migration..."
+echo "[3/5] Stopping utilportal service and running database migration..."
+systemctl stop utilportal
 source venv/bin/activate
 python migrate_db.py
 deactivate
