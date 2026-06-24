@@ -240,7 +240,7 @@ def _execute_sp_sync(module, connection_model, parameters, submitted_params, log
                         log.pid = spid
                         db.session.commit()
             except Exception:
-                pass
+                db.session.rollback()
         
         # Apply standard session settings to match SSMS behavior and optimize performance
         cursor.execute("SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED")
@@ -254,19 +254,22 @@ def _execute_sp_sync(module, connection_model, parameters, submitted_params, log
         cursor.execute("SET NUMERIC_ROUNDABORT OFF")
         
         def collect_messages():
-            if hasattr(cursor, 'messages') and cursor.messages:
-                for msg in cursor.messages:
-                    if isinstance(msg, (list, tuple)) and len(msg) >= 2:
-                        msg_text = msg[1]
-                    else:
-                        msg_text = str(msg)
-                    if msg_text not in seen_messages:
-                        seen_messages.add(msg_text)
-                        clean_msg = msg_text
-                        if '[SQL Server]' in clean_msg:
-                            clean_msg = clean_msg.split('[SQL Server]', 1)[1]
-                        clean_msg = clean_msg.strip()
-                        sql_messages.append(clean_msg)
+            try:
+                if hasattr(cursor, 'messages') and cursor.messages:
+                    for msg in cursor.messages:
+                        if isinstance(msg, (list, tuple)) and len(msg) >= 2:
+                            msg_text = msg[1]
+                        else:
+                            msg_text = str(msg)
+                        if msg_text not in seen_messages:
+                            seen_messages.add(msg_text)
+                            clean_msg = msg_text
+                            if '[SQL Server]' in clean_msg:
+                                clean_msg = clean_msg.split('[SQL Server]', 1)[1]
+                            clean_msg = clean_msg.strip()
+                            sql_messages.append(clean_msg)
+            except Exception:
+                pass
         
         if module.object_type == 'job':
             job_name = module.stored_proc_name
@@ -318,50 +321,66 @@ def _execute_sp_sync(module, connection_model, parameters, submitted_params, log
 def _run_sp_background(app, log_id, module_id, connection_id, db_name, object_type,
                         sp_name, parameters, submitted_params):
     """Run SP execution in a background thread. Updates the AuditLog when done."""
+    import traceback
     with app.app_context():
-        log = AuditLog.query.get(log_id)
-        module = Module.query.get(module_id)
-        connection_model = ServerConnection.query.get(connection_id) if connection_id else None
-        
-        if not connection_model or connection_model.server_type != 'sqlserver':
-            log.status = 'error'
-            log.message = 'No valid SQL Server connection.'
-            log.end_time = dt.now(tz.utc)
+        try:
+            log = AuditLog.query.get(log_id)
+            module = Module.query.get(module_id)
+            connection_model = ServerConnection.query.get(connection_id) if connection_id else None
+            
+            if not connection_model or connection_model.server_type != 'sqlserver':
+                log.status = 'error'
+                log.message = 'No valid SQL Server connection.'
+                log.end_time = dt.now(tz.utc)
+                db.session.commit()
+                return
+            
+            # Store the SQL call being executed so users can see / reproduce it
+            sql_call = _build_sql_call(sp_name, parameters, submitted_params, object_type)
+            log.message = f'Executing: {sql_call}'
             db.session.commit()
-            return
-        
-        # Store the SQL call being executed so users can see / reproduce it
-        sql_call = _build_sql_call(sp_name, parameters, submitted_params, object_type)
-        log.message = f'Executing: {sql_call}'
-        db.session.commit()
-        
-        result_sets, error_msg, _, sql_messages = _execute_sp_sync(module, connection_model, parameters, submitted_params, log_id=log_id)
-        
-        # Check if the execution was cancelled by the user while running
-        db.session.refresh(log)
-        if log.status != 'running':
-            return
-        
-        log.end_time = dt.now(tz.utc)
-        if error_msg:
-            log.status = 'error'
-            log_msg = f'SQL: {sql_call}\n\nError: {error_msg}'
-            if sql_messages:
-                log_msg += f'\n\nSQL Messages:\n' + '\n'.join(sql_messages)
-            log.message = log_msg
-        else:
-            log.status = 'success'
-            log_msg = f'Executed successfully.'
-            if result_sets:
-                log_msg += f' Returned {len(result_sets)} result set(s).'
-            log_msg += f'\n\nSQL: {sql_call}'
-            if sql_messages:
-                log_msg += f'\n\nSQL Messages:\n' + '\n'.join(sql_messages)
-            log.message = log_msg
-            if result_sets:
-                log.result_data = json.dumps(result_sets, default=str)
-        
-        db.session.commit()
+            
+            result_sets, error_msg, _, sql_messages = _execute_sp_sync(module, connection_model, parameters, submitted_params, log_id=log_id)
+            
+            # Check if the execution was cancelled by the user while running
+            db.session.refresh(log)
+            if log.status != 'running':
+                return
+            
+            log.end_time = dt.now(tz.utc)
+            if error_msg:
+                log.status = 'error'
+                log_msg = f'SQL: {sql_call}\n\nError: {error_msg}'
+                if sql_messages:
+                    log_msg += f'\n\nSQL Messages:\n' + '\n'.join(sql_messages)
+                log.message = log_msg
+            else:
+                log.status = 'success'
+                log_msg = f'Executed successfully.'
+                if result_sets:
+                    log_msg += f' Returned {len(result_sets)} result set(s).'
+                log_msg += f'\n\nSQL: {sql_call}'
+                if sql_messages:
+                    log_msg += f'\n\nSQL Messages:\n' + '\n'.join(sql_messages)
+                log.message = log_msg
+                if result_sets:
+                    log.result_data = json.dumps(result_sets, default=str)
+            
+            db.session.commit()
+        except Exception as thread_ex:
+            db.session.rollback()
+            try:
+                # Reload log in case session was rolled back
+                log = AuditLog.query.get(log_id)
+                if log:
+                    log.status = 'error'
+                    log.message = f"Uncaught exception in background thread:\n{str(thread_ex)}\n\nTraceback:\n{traceback.format_exc()}"
+                    log.end_time = dt.now(tz.utc)
+                    db.session.commit()
+            except Exception:
+                pass
+        finally:
+            db.session.remove()
 
 
 @bp.route('/execute/<int:module_id>', methods=['GET', 'POST'])
