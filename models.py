@@ -2,6 +2,7 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, timezone
+from sqlalchemy.dialects.mysql import LONGTEXT
 
 db = SQLAlchemy()
 
@@ -132,10 +133,10 @@ class AuditLog(db.Model):
     module_id = db.Column(db.Integer, db.ForeignKey('module.id'), nullable=False)
     parameters_used = db.Column(db.Text)
     status = db.Column(db.String(50))  # 'running', 'success', or 'error'
-    message = db.Column(db.Text)
+    message = db.Column(db.Text().with_variant(LONGTEXT, 'mysql'))
     pid = db.Column(db.Integer, nullable=True)
     notified = db.Column(db.Boolean, default=False, nullable=False, server_default='0')
-    result_data = db.Column(db.Text, nullable=True)   # JSON of SP result sets
+    result_data = db.Column(db.Text().with_variant(LONGTEXT, 'mysql'), nullable=True)   # JSON of SP result sets
 
     user = db.relationship('User', backref=db.backref('audit_logs', lazy=True))
     module = db.relationship('Module', backref=db.backref('audit_logs', lazy=True))

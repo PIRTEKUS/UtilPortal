@@ -38,4 +38,24 @@ with app.app_context():
             else:
                 print(f"Error executing {cmd}: {e}")
 
+    # 3. For MySQL production databases, modify column types to LONGTEXT
+    try:
+        dialect_name = db.engine.dialect.name
+        if dialect_name == 'mysql':
+            print("Detected MySQL database. Ensuring result_data and message columns are LONGTEXT...")
+            mysql_cmds = [
+                "ALTER TABLE audit_log MODIFY COLUMN result_data LONGTEXT NULL",
+                "ALTER TABLE audit_log MODIFY COLUMN message LONGTEXT NULL"
+            ]
+            for cmd in mysql_cmds:
+                try:
+                    db.session.execute(text(cmd))
+                    db.session.commit()
+                    print(f"Executed: {cmd}")
+                except Exception as e:
+                    db.session.rollback()
+                    print(f"Error executing {cmd}: {e}")
+    except Exception as dialect_err:
+        print(f"Could not check dialect or modify MySQL columns: {dialect_err}")
+
     print("Migration complete!")
