@@ -274,7 +274,6 @@ def _execute_sp_sync(module, connection_model, parameters, submitted_params, log
         if module.object_type == 'job':
             job_name = module.stored_proc_name
             cursor.execute(f"EXEC msdb.dbo.sp_start_job N'{job_name}'")
-            collect_messages()
         else:
             # Append WITH RECOMPILE to prevent parameter sniffing issues with cached plans
             exec_query = sql_call
@@ -283,7 +282,6 @@ def _execute_sp_sync(module, connection_model, parameters, submitted_params, log
                     exec_query += " WITH RECOMPILE"
             
             cursor.execute(exec_query)
-            collect_messages()
                 
             while True:
                 if cursor.description:
@@ -293,11 +291,10 @@ def _execute_sp_sync(module, connection_model, parameters, submitted_params, log
                         'columns': columns,
                         'rows': [dict(zip(columns, row)) for row in rows]
                     })
-                collect_messages()
                 if not cursor.nextset():
                     break
-                collect_messages()
         
+        collect_messages()
         cursor.close()
     except Exception as e:
         error_msg = str(e)
@@ -322,13 +319,16 @@ def _run_sp_background(app, log_id, module_id, connection_id, db_name, object_ty
                         sp_name, parameters, submitted_params):
     """Run SP execution in a background thread. Updates the AuditLog when done."""
     import traceback
+    import sys
     with app.app_context():
         try:
+            print(f"[_run_sp_background] Thread started for log_id={log_id}", file=sys.stderr, flush=True)
             log = AuditLog.query.get(log_id)
             module = Module.query.get(module_id)
             connection_model = ServerConnection.query.get(connection_id) if connection_id else None
             
             if not connection_model or connection_model.server_type != 'sqlserver':
+                print(f"[_run_sp_background] No valid SQL Server connection for log_id={log_id}", file=sys.stderr, flush=True)
                 log.status = 'error'
                 log.message = 'No valid SQL Server connection.'
                 log.end_time = dt.now(tz.utc)
@@ -337,14 +337,18 @@ def _run_sp_background(app, log_id, module_id, connection_id, db_name, object_ty
             
             # Store the SQL call being executed so users can see / reproduce it
             sql_call = _build_sql_call(sp_name, parameters, submitted_params, object_type)
+            print(f"[_run_sp_background] Storing EXEC message for log_id={log_id}: {sql_call}", file=sys.stderr, flush=True)
             log.message = f'Executing: {sql_call}'
             db.session.commit()
             
+            print(f"[_run_sp_background] Calling _execute_sp_sync for log_id={log_id}...", file=sys.stderr, flush=True)
             result_sets, error_msg, _, sql_messages = _execute_sp_sync(module, connection_model, parameters, submitted_params, log_id=log_id)
+            print(f"[_run_sp_background] _execute_sp_sync finished for log_id={log_id}. error_msg={error_msg}", file=sys.stderr, flush=True)
             
             # Check if the execution was cancelled by the user while running
             db.session.refresh(log)
             if log.status != 'running':
+                print(f"[_run_sp_background] Execution log_id={log_id} was cancelled during run. Status is {log.status}.", file=sys.stderr, flush=True)
                 return
             
             log.end_time = dt.now(tz.utc)
@@ -364,10 +368,15 @@ def _run_sp_background(app, log_id, module_id, connection_id, db_name, object_ty
                     log_msg += f'\n\nSQL Messages:\n' + '\n'.join(sql_messages)
                 log.message = log_msg
                 if result_sets:
+                    print(f"[_run_sp_background] Serializing results for log_id={log_id}...", file=sys.stderr, flush=True)
                     log.result_data = json.dumps(result_sets, default=str)
             
+            print(f"[_run_sp_background] Committing final status for log_id={log_id}...", file=sys.stderr, flush=True)
             db.session.commit()
+            print(f"[_run_sp_background] Execution log_id={log_id} finished successfully.", file=sys.stderr, flush=True)
         except Exception as thread_ex:
+            print(f"[_run_sp_background] Exception caught in thread for log_id={log_id}: {thread_ex}", file=sys.stderr, flush=True)
+            print(traceback.format_exc(), file=sys.stderr, flush=True)
             db.session.rollback()
             try:
                 # Reload log in case session was rolled back
