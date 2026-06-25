@@ -187,7 +187,7 @@ def get_databases(conn_id):
     if conn.server_type != 'sqlserver':
         return jsonify({'error': 'Only SQL Server supports dynamic DB fetching right now'}), 400
     try:
-        conn_str = f"DRIVER={{ODBC Driver 18 for SQL Server}};SERVER={conn.host};UID={conn.username};PWD={conn.password};Encrypt=no;TrustServerCertificate=no;"
+        conn_str = f"DRIVER={{ODBC Driver 18 for SQL Server}};SERVER={conn.host};UID={conn.username};PWD={conn.password};Encrypt=no;TrustServerCertificate=no;PacketSize=1024;"
         odbc_conn = pyodbc.connect(conn_str, autocommit=True)
         cursor = odbc_conn.cursor()
         cursor.execute("SELECT name FROM sys.databases WHERE state_desc = 'ONLINE'")
