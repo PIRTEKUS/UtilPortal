@@ -486,6 +486,10 @@ def execute(module_id):
         # Check if this module is already running to prevent concurrent runs
         running_log = AuditLog.query.filter_by(module_id=module.id, status='running').first()
         if running_log:
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.is_json:
+                return jsonify({
+                    'error': f'⚠️ "{module.name}" is already running (Execution #{running_log.id}). Please wait for it to complete or cancel it from "My Executions" before running it again.'
+                }), 400
             flash(
                 f'⚠️ "{module.name}" is already running (Execution #{running_log.id}). '
                 f'Please wait for it to complete or cancel it from "My Executions" before running it again.',
@@ -495,14 +499,15 @@ def execute(module_id):
 
         submitted_params = _parse_submitted_params(parameters, request.form)
         run_in_background = request.form.get('background') == '1'
+        is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.is_json
         
-        if run_in_background:
-            # --- BACKGROUND EXECUTION ---
+        if run_in_background or is_ajax:
+            # --- BACKGROUND / STREAMING EXECUTION ---
             sql_preview = _build_sql_call(module.stored_proc_name, parameters, submitted_params, module.object_type)
             log = AuditLog(
                 user_id=current_user.id, module_id=module.id,
                 parameters_used=json.dumps(submitted_params, default=str),
-                status='running', message=f'Executing in background...\n\nSQL: {sql_preview}'
+                status='running', message=f'Executing: {sql_preview}'
             )
             db.session.add(log)
             db.session.commit()
@@ -517,6 +522,13 @@ def execute(module_id):
             )
             thread.start()
             
+            if is_ajax:
+                return jsonify({
+                    'status': 'background' if run_in_background else 'stream',
+                    'log_id': log.id,
+                    'redirect_url': url_for('portal.dashboard')
+                })
+                
             flash(f'"{module.name}" is now running in the background. You will be notified when it completes.', 'info')
             return redirect(url_for('portal.dashboard'))
         
@@ -935,3 +947,54 @@ def execute_python_stream(module_id):
     resp.headers['X-Accel-Buffering'] = 'no'
     resp.headers['Cache-Control'] = 'no-cache'
     return resp
+
+
+@bp.route('/execute/sp/stream/<int:log_id>')
+@login_required
+def execute_sp_stream(log_id):
+    log = AuditLog.query.get_or_404(log_id)
+    if log.user_id != current_user.id and not current_user.is_admin():
+        abort(403)
+
+    def generate():
+        import time
+        from datetime import datetime, timezone
+
+        yield "data: [System] Connected to task stream.\n\n"
+        yield f"data: [System] Starting database execution...\n\n"
+        
+        last_logged_len = 0
+        while True:
+            # Refresh to get the latest status and message updates
+            db.session.refresh(log)
+            
+            # Print elapsed time to keep connection active and inform user
+            if log.timestamp:
+                # Convert log.timestamp to offset-aware if naive, or perform offset-naive comparison
+                log_time = log.timestamp.replace(tzinfo=None)
+                now_time = datetime.now(timezone.utc).replace(tzinfo=None)
+                elapsed = int((now_time - log_time).total_seconds())
+                yield f"data: [System] Query executing... (elapsed: {elapsed}s)\n\n"
+            
+            # Stream any intermediate message text that was saved (if any)
+            if log.message and len(log.message) > last_logged_len:
+                new_part = log.message[last_logged_len:]
+                last_logged_len = len(log.message)
+                for line in new_part.split('\n'):
+                    if line.strip():
+                        yield f"data: {line}\n\n"
+
+            if log.status != 'running':
+                if log.status == 'success':
+                    yield f"data: REDIRECT: {url_for('portal.view_execution_results', log_id=log.id)}\n\n"
+                else:
+                    yield f"data: [System] Task finished with status: {log.status.upper()}\n\n"
+                break
+                
+            time.sleep(2)
+
+    resp = Response(stream_with_context(generate()), mimetype='text/event-stream')
+    resp.headers['X-Accel-Buffering'] = 'no'
+    resp.headers['Cache-Control'] = 'no-cache'
+    return resp
+

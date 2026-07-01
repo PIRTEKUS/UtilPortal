@@ -87,8 +87,8 @@
                 </thead>
                 <tbody>
                     {% for log in logs %}
-                    <tr class="{% if log.status == 'running' %}table-warning{% elif log.status == 'error' %}table-danger{% endif %}"
-                        style="cursor:pointer;" data-bs-toggle="collapse" data-bs-target="#detail-{{ log.id }}">
+                    <tr class="execution-row {% if log.status == 'running' %}table-warning{% elif log.status == 'error' %}table-danger{% endif %}"
+                        style="cursor:pointer;" data-target="#detail-{{ log.id }}">
                         <td class="text-center text-muted">
                             <i class="bi bi-chevron-down small"></i>
                         </td>
@@ -320,6 +320,33 @@ ${message}
             label.textContent = 'Auto-refresh: Off';
             clearInterval(refreshInterval);
         }
+    });
+
+    // Custom execution row click collapse handler to avoid conflict with View button / Stop button clicks
+    document.querySelectorAll('.execution-row').forEach(function(row) {
+        row.addEventListener('click', function(e) {
+            // Ignore if user clicked a link, button, form, or their children
+            if (e.target.closest('a') || e.target.closest('button') || e.target.closest('form') || e.target.closest('.text-end')) {
+                return;
+            }
+            
+            const targetSelector = this.getAttribute('data-target');
+            const targetEl = document.querySelector(targetSelector);
+            if (targetEl) {
+                const chevron = this.querySelector('.bi-chevron-down');
+                if (chevron) {
+                    chevron.style.transition = 'transform 0.2s';
+                    if (targetEl.classList.contains('show')) {
+                        chevron.style.transform = '';
+                    } else {
+                        chevron.style.transform = 'rotate(180deg)';
+                    }
+                }
+                
+                const bsCollapse = bootstrap.Collapse.getOrCreateInstance(targetEl);
+                bsCollapse.toggle();
+            }
+        });
     });
 </script>
 {% endblock %}

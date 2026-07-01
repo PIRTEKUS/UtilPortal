@@ -34,9 +34,20 @@
                 {% else %}
                     {% for result in result_sets %}
                         <div class="mb-4 mt-2">
-                            {% if result_sets|length > 1 %}
-                                <h5 class="text-light mb-3 border-bottom border-secondary pb-2">Result Set {{ loop.index }}</h5>
-                            {% endif %}
+                            <div class="d-flex justify-content-between align-items-center mb-3 border-bottom border-secondary pb-2">
+                                <h5 class="text-light mb-0">
+                                    {% if result_sets|length > 1 %}
+                                        Result Set {{ loop.index }}
+                                    {% else %}
+                                        Data Rows
+                                    {% endif %}
+                                </h5>
+                                {% if result.rows and result_sets|length > 1 %}
+                                <button onclick="exportSingleTable({{ loop.index0 }})" class="btn btn-sm btn-outline-success">
+                                    <i class="bi bi-file-earmark-excel me-1"></i>Export This Table
+                                </button>
+                                {% endif %}
+                            </div>
                             
                             {% if result.rows %}
                                 <div class="table-responsive">
@@ -91,6 +102,22 @@
         var moduleName = "{{ module.name|replace(' ', '_')|replace('\"', '')|replace("'", "") }}";
         var dateStr = new Date().toISOString().slice(0,10);
         var filename = moduleName + "_Results_" + dateStr + ".xlsx";
+        
+        XLSX.writeFile(wb, filename);
+    }
+
+    function exportSingleTable(index) {
+        var tables = document.querySelectorAll('.result-table');
+        if (index >= tables.length) return;
+        
+        var wb = XLSX.utils.book_new();
+        var ws = XLSX.utils.table_to_sheet(tables[index]);
+        var sheetName = "Result Set " + (index + 1);
+        XLSX.utils.book_append_sheet(wb, ws, sheetName);
+        
+        var moduleName = "{{ module.name|replace(' ', '_')|replace('\"', '')|replace("'", "") }}";
+        var dateStr = new Date().toISOString().slice(0,10);
+        var filename = moduleName + "_ResultSet_" + (index + 1) + "_" + dateStr + ".xlsx";
         
         XLSX.writeFile(wb, filename);
     }

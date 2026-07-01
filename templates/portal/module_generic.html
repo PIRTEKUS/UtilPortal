@@ -301,6 +301,27 @@
                             </div>
                         </div>
                     </div>
+
+                    <!-- Console Modal for Streaming Execution -->
+                    <div class="modal fade" id="consoleModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="consoleModalLabel" aria-hidden="true" data-bs-theme="dark">
+                        <div class="modal-dialog modal-lg modal-dialog-centered">
+                            <div class="modal-content bg-dark border-secondary">
+                                <div class="modal-header border-secondary">
+                                    <h5 class="modal-title text-primary" id="consoleModalLabel">
+                                        <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                                        Executing Stored Procedure...
+                                    </h5>
+                                </div>
+                                <div class="modal-body p-0">
+                                    <pre id="sp-console-output" class="text-success p-3 m-0" style="height: 350px; overflow-y: auto; background-color: #1e1e1e; font-family: 'Consolas', 'Courier New', monospace; font-size: 14px; white-space: pre-wrap; word-break: break-all;"></pre>
+                                </div>
+                                <div class="modal-footer border-secondary">
+                                    <div class="small text-muted me-auto" id="sp-console-status">Initializing connection...</div>
+                                    <button type="button" class="btn btn-outline-danger btn-sm" id="sp-console-close-btn" data-bs-dismiss="modal" disabled>Close</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </form>
             </div>
         </div>
@@ -447,14 +468,25 @@
         tpInit(paramName);
     });
 
-    // Form submit handler with double-submit prevention
+    // Form submit handler with double-submit prevention & AJAX SP streaming console
     let isFormSubmitting = false;
-    document.getElementById('moduleForm').addEventListener('submit', function (e) {
+    
+    const moduleForm = document.getElementById('moduleForm');
+    const confirmModalEl = document.getElementById('confirmModal');
+    const confirmModal = bootstrap.Modal.getOrCreateInstance(confirmModalEl);
+    
+    const consoleModalEl = document.getElementById('consoleModal');
+    const consoleModal = new bootstrap.Modal(consoleModalEl, { backdrop: 'static', keyboard: false });
+    
+    const spConsoleOutput = document.getElementById('sp-console-output');
+    const spConsoleStatus = document.getElementById('sp-console-status');
+    const spConsoleCloseBtn = document.getElementById('sp-console-close-btn');
+
+    moduleForm.addEventListener('submit', async function (e) {
         if (isFormSubmitting) {
             e.preventDefault();
             return false;
         }
-        isFormSubmitting = true;
 
         // Sync all time pickers
         document.querySelectorAll('.time-picker-widget').forEach(function(w) {
@@ -463,16 +495,93 @@
         });
 
         var isBackground = document.getElementById('backgroundField').value === '1';
-        var activeBtn = isBackground ? document.getElementById('bgSubmitBtn') : document.getElementById('confirmSubmitBtn');
-        var inactiveBtn = isBackground ? document.getElementById('confirmSubmitBtn') : document.getElementById('bgSubmitBtn');
-
-        activeBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> ' + (isBackground ? 'Submitting...' : 'Executing...');
         
-        // Disable buttons after a small timeout to let the submit event proceed safely
-        setTimeout(function() {
-            activeBtn.disabled = true;
-            inactiveBtn.disabled = true;
-        }, 50);
+        // Hide confirmation modal
+        confirmModal.hide();
+
+        if (isBackground) {
+            isFormSubmitting = true;
+            var activeBtn = document.getElementById('bgSubmitBtn');
+            var inactiveBtn = document.getElementById('confirmSubmitBtn');
+            activeBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Submitting...';
+            setTimeout(function() {
+                activeBtn.disabled = true;
+                inactiveBtn.disabled = true;
+            }, 50);
+            return true;
+        }
+
+        // --- Execute & Wait: Stream via AJAX ---
+        e.preventDefault();
+        
+        spConsoleOutput.textContent = '';
+        spConsoleStatus.textContent = 'Submitting execution request...';
+        spConsoleCloseBtn.disabled = true;
+        consoleModal.show();
+        
+        const formData = new FormData(moduleForm);
+        
+        try {
+            const response = await fetch(moduleForm.action, {
+                method: 'POST',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: formData
+            });
+            
+            if (!response.ok) {
+                const errData = await response.json();
+                throw new Error(errData.error || `HTTP ${response.status}`);
+            }
+            
+            const data = await response.json();
+            const logId = data.log_id;
+            
+            spConsoleStatus.textContent = 'Connecting to task stream...';
+            const streamUrl = `/execute/sp/stream/${logId}`;
+            const eventSource = new EventSource(streamUrl);
+            
+            eventSource.onmessage = function(event) {
+                const text = event.data;
+                
+                if (text.startsWith('REDIRECT: ')) {
+                    const redirectUrl = text.slice(10);
+                    spConsoleStatus.textContent = 'Success! Redirecting to results...';
+                    eventSource.close();
+                    window.location.href = redirectUrl;
+                    return;
+                }
+                
+                if (text.startsWith('[System] Task finished with status: ERROR') || text.startsWith('[System] Task finished with status: CANCELLED')) {
+                    spConsoleStatus.textContent = 'Execution failed.';
+                    spConsoleOutput.textContent += '\n' + text + '\n';
+                    spConsoleOutput.scrollTop = spConsoleOutput.scrollHeight;
+                    spConsoleCloseBtn.disabled = false;
+                    eventSource.close();
+                    return;
+                }
+                
+                spConsoleOutput.textContent += text + '\n';
+                spConsoleOutput.scrollTop = spConsoleOutput.scrollHeight;
+                
+                if (text.startsWith('[System] Query executing...')) {
+                    spConsoleStatus.textContent = 'Running stored procedure...';
+                }
+            };
+            
+            eventSource.onerror = function(err) {
+                spConsoleStatus.textContent = 'Task stream disconnected.';
+                spConsoleOutput.textContent += '\n[System] Connection to task stream closed or interrupted.\n';
+                spConsoleCloseBtn.disabled = false;
+                eventSource.close();
+            };
+            
+        } catch (err) {
+            spConsoleOutput.textContent += `[System] Error: ${err.message}\n`;
+            spConsoleStatus.textContent = 'Failed to start execution.';
+            spConsoleCloseBtn.disabled = false;
+        }
     });
 </script>
 {% endblock %}
