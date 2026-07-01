@@ -958,37 +958,49 @@ def execute_sp_stream(log_id):
 
     def generate():
         import time
-        from datetime import datetime, timezone
+        from datetime import datetime as dt, timezone as tz
+        from models import db, AuditLog
 
         yield "data: [System] Connected to task stream.\n\n"
         yield f"data: [System] Starting database execution...\n\n"
         
         last_logged_len = 0
         while True:
-            # Refresh to get the latest status and message updates
-            db.session.refresh(log)
-            
-            # Print elapsed time to keep connection active and inform user
-            if log.timestamp:
-                # Convert log.timestamp to offset-aware if naive, or perform offset-naive comparison
-                log_time = log.timestamp.replace(tzinfo=None)
-                now_time = datetime.now(timezone.utc).replace(tzinfo=None)
-                elapsed = int((now_time - log_time).total_seconds())
-                yield f"data: [System] Query executing... (elapsed: {elapsed}s)\n\n"
-            
-            # Stream any intermediate message text that was saved (if any)
-            if log.message and len(log.message) > last_logged_len:
-                new_part = log.message[last_logged_len:]
-                last_logged_len = len(log.message)
-                for line in new_part.split('\n'):
-                    if line.strip():
-                        yield f"data: {line}\n\n"
+            try:
+                # Force SQLAlchemy to expire the session identity map and query fresh data from the DB
+                db.session.expire_all()
+                log_entry = AuditLog.query.get(log_id)
+                if not log_entry:
+                    yield "data: [System] Error: Log entry not found in database.\n\n"
+                    break
+                
+                status = log_entry.status
+                message = log_entry.message
+                timestamp = log_entry.timestamp
+                
+                # Print elapsed time to keep connection active and inform user
+                if timestamp:
+                    log_time = timestamp.replace(tzinfo=None)
+                    now_time = dt.now(tz.utc).replace(tzinfo=None)
+                    elapsed = int((now_time - log_time).total_seconds())
+                    yield f"data: [System] Query executing... (elapsed: {elapsed}s)\n\n"
+                
+                # Stream any intermediate message text that was saved (if any)
+                if message and len(message) > last_logged_len:
+                    new_part = message[last_logged_len:]
+                    last_logged_len = len(message)
+                    for line in new_part.split('\n'):
+                        if line.strip():
+                            yield f"data: {line}\n\n"
 
-            if log.status != 'running':
-                if log.status == 'success':
-                    yield f"data: REDIRECT: {url_for('portal.view_execution_results', log_id=log.id)}\n\n"
-                else:
-                    yield f"data: [System] Task finished with status: {log.status.upper()}\n\n"
+                if status != 'running':
+                    if status == 'success':
+                        yield f"data: REDIRECT: {url_for('portal.view_execution_results', log_id=log_id)}\n\n"
+                    else:
+                        yield f"data: [System] Task finished with status: {status.upper()}\n\n"
+                    break
+            except Exception as e:
+                yield f"data: [System] Database connection error: {str(e)}\n\n"
                 break
                 
             time.sleep(2)
