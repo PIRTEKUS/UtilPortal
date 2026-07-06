@@ -25,6 +25,11 @@ def run_test(use_packet_size_1024):
     start_time = time.time()
     try:
         conn = pyodbc.connect(conn_str, autocommit=True)
+        # Configure UTF-16LE decoding for NVARCHAR / WCHAR columns and metadata on Linux
+        conn.setdecoding(pyodbc.SQL_CHAR, encoding='utf-8')
+        conn.setdecoding(pyodbc.SQL_WCHAR, encoding='utf-16le')
+        conn.setdecoding(pyodbc.SQL_WMETADATA, encoding='utf-16le')
+        conn.setencoding(encoding='utf-8')
         print(f"Connected successfully in {time.time() - start_time:.2f}s.")
     except Exception as e:
         print(f"Connection FAILED: {e}")
