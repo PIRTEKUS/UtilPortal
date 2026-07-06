@@ -539,7 +539,7 @@
             const logId = data.log_id;
             
             spConsoleStatus.textContent = 'Connecting to task stream...';
-            const streamUrl = `/execute/sp/stream/${logId}`;
+            const streamUrl = "{{ url_for('portal.execute_sp_stream', log_id=999999) }}".replace('999999', logId);
             
             const streamResponse = await fetch(streamUrl);
             if (!streamResponse.ok) throw new Error(`HTTP ${streamResponse.status}`);
