@@ -540,46 +540,57 @@
             
             spConsoleStatus.textContent = 'Connecting to task stream...';
             const streamUrl = `/execute/sp/stream/${logId}`;
-            const eventSource = new EventSource(streamUrl);
             
-            eventSource.onmessage = function(event) {
-                const text = event.data;
-                
-                if (text.startsWith('REDIRECT: ')) {
-                    const redirectUrl = text.slice(10);
-                    spConsoleStatus.textContent = 'Success! Redirecting to results...';
-                    eventSource.close();
-                    window.location.href = redirectUrl;
-                    return;
-                }
-                
-                if (text.startsWith('[System] Task finished with status: ERROR') || text.startsWith('[System] Task finished with status: CANCELLED')) {
-                    spConsoleStatus.textContent = 'Execution failed.';
-                    spConsoleOutput.textContent += '\n' + text + '\n';
-                    spConsoleOutput.scrollTop = spConsoleOutput.scrollHeight;
-                    spConsoleCloseBtn.disabled = false;
-                    eventSource.close();
-                    return;
-                }
-                
-                spConsoleOutput.textContent += text + '\n';
-                spConsoleOutput.scrollTop = spConsoleOutput.scrollHeight;
-                
-                if (text.startsWith('[System] Query executing...')) {
-                    spConsoleStatus.textContent = 'Running stored procedure...';
-                }
-            };
+            const streamResponse = await fetch(streamUrl);
+            if (!streamResponse.ok) throw new Error(`HTTP ${streamResponse.status}`);
             
-            eventSource.onerror = function(err) {
-                spConsoleStatus.textContent = 'Task stream disconnected.';
-                spConsoleOutput.textContent += '\n[System] Connection to task stream closed or interrupted.\n';
-                spConsoleCloseBtn.disabled = false;
-                eventSource.close();
-            };
+            const reader = streamResponse.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+            
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                
+                buffer += decoder.decode(value, { stream: true });
+                const parts = buffer.split('\n\n');
+                buffer = parts.pop(); // keep incomplete chunk
+                
+                for (const part of parts) {
+                    for (const line of part.split('\n')) {
+                        if (line.startsWith('data: ')) {
+                            const text = line.slice(6);
+                            if (text.trim()) {
+                                if (text.startsWith('REDIRECT: ')) {
+                                    const redirectUrl = text.slice(10);
+                                    spConsoleStatus.textContent = 'Success! Redirecting to results...';
+                                    window.location.href = redirectUrl;
+                                    return;
+                                }
+                                
+                                if (text.startsWith('[System] Task finished with status: ERROR') || text.startsWith('[System] Task finished with status: CANCELLED')) {
+                                    spConsoleStatus.textContent = 'Execution failed.';
+                                    spConsoleOutput.textContent += '\n' + text + '\n';
+                                    spConsoleOutput.scrollTop = spConsoleOutput.scrollHeight;
+                                    spConsoleCloseBtn.disabled = false;
+                                    return;
+                                }
+                                
+                                spConsoleOutput.textContent += text + '\n';
+                                spConsoleOutput.scrollTop = spConsoleOutput.scrollHeight;
+                                
+                                if (text.startsWith('[System] Query executing...')) {
+                                    spConsoleStatus.textContent = 'Running stored procedure...';
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             
         } catch (err) {
-            spConsoleOutput.textContent += `[System] Error: ${err.message}\n`;
-            spConsoleStatus.textContent = 'Failed to start execution.';
+            spConsoleOutput.textContent += `\n[System] Connection error: ${err.message}\n`;
+            spConsoleStatus.textContent = 'Connection Error / Disconnected';
             spConsoleCloseBtn.disabled = false;
         }
     });
