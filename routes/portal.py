@@ -967,8 +967,8 @@ def execute_sp_stream(log_id):
         last_logged_len = 0
         while True:
             try:
-                # Force SQLAlchemy to expire the session identity map and query fresh data from the DB
-                db.session.expire_all()
+                # End the transaction snapshot and discard cached objects to force a fresh SELECT from DB
+                db.session.rollback()
                 log_entry = AuditLog.query.get(log_id)
                 if not log_entry:
                     yield "data: [System] Error: Log entry not found in database.\n\n"
