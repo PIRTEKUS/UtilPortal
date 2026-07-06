@@ -211,6 +211,8 @@ def _execute_sp_sync(module, connection_model, parameters, submitted_params, log
             f"Encrypt=Optional;TrustServerCertificate=yes;"
             f"Connection Timeout=30;"
             f"PacketSize=1024;"
+            f"KeepAlive=30000;"
+            f"KeepAliveInterval=1000;"
         )
         if module.database_name:
             conn_str += f"DATABASE={module.database_name};"
@@ -438,7 +440,7 @@ def execute(module_id):
     
     if not parameters and module.object_type == 'sp' and connection_model and connection_model.server_type == 'sqlserver':
         try:
-            conn_str = f"DRIVER={{ODBC Driver 18 for SQL Server}};SERVER={connection_model.host};UID={connection_model.username};PWD={connection_model.password};Encrypt=Optional;TrustServerCertificate=yes;PacketSize=1024;"
+            conn_str = f"DRIVER={{ODBC Driver 18 for SQL Server}};SERVER={connection_model.host};UID={connection_model.username};PWD={connection_model.password};Encrypt=Optional;TrustServerCertificate=yes;PacketSize=1024;KeepAlive=30000;KeepAliveInterval=1000;"
             if module.database_name:
                 conn_str += f";DATABASE={module.database_name}"
             
