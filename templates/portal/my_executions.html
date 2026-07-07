@@ -107,13 +107,11 @@
                             {% endif %}
                         </td>
                         <td class="fw-semibold">{{ log.module.name if log.module else '—' }}</td>
-                        <td class="small text-nowrap" id="started-{{ log.id }}">
-                            {{ log.timestamp.strftime('%Y-%m-%d %H:%M:%S') if log.timestamp else '—' }}
+                        <td class="small text-nowrap utc-time" data-utc="{{ log.timestamp.isoformat() if log.timestamp else '' }}" id="started-{{ log.id }}">
+                            —
                         </td>
-                        <td class="small text-nowrap" id="finished-{{ log.id }}">
-                            {% if log.end_time %}
-                                {{ log.end_time.strftime('%Y-%m-%d %H:%M:%S') }}
-                            {% elif log.status == 'running' %}
+                        <td class="small text-nowrap utc-time" data-utc="{{ log.end_time.isoformat() if log.end_time else '' }}" id="finished-{{ log.id }}">
+                            {% if log.status == 'running' %}
                                 <span class="text-warning fst-italic">In progress…</span>
                             {% else %}
                                 —
@@ -347,6 +345,25 @@ ${message}
                 bsCollapse.toggle();
             }
         });
+    });
+
+    // Convert UTC timestamps to the browser's local timezone (EST/EDT)
+    document.querySelectorAll('.utc-time').forEach(function(el) {
+        const utcStr = el.getAttribute('data-utc');
+        if (utcStr) {
+            // Append Z to indicate UTC if it doesn't have it (needed for cross-browser parsing)
+            const dateStr = utcStr.endsWith('Z') ? utcStr : utcStr + 'Z';
+            const localDate = new Date(dateStr);
+            if (!isNaN(localDate)) {
+                const year = localDate.getFullYear();
+                const month = String(localDate.getMonth() + 1).padStart(2, '0');
+                const day = String(localDate.getDate()).padStart(2, '0');
+                const hours = String(localDate.getHours()).padStart(2, '0');
+                const minutes = String(localDate.getMinutes()).padStart(2, '0');
+                const seconds = String(localDate.getSeconds()).padStart(2, '0');
+                el.textContent = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+            }
+        }
     });
 </script>
 {% endblock %}
