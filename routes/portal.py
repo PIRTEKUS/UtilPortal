@@ -12,6 +12,41 @@ import pyodbc
 bp = Blueprint('portal', __name__)
 active_connections = {}
 
+# Result sets larger than this are written to disk instead of stored in MySQL,
+# avoiding max_allowed_packet / broken-pipe errors for very large SP outputs.
+_RESULT_INLINE_LIMIT = 10 * 1024 * 1024  # 10 MB
+
+
+def _results_dir():
+    """Absolute path to the on-disk results store (created on first use)."""
+    d = os.path.join(os.getcwd(), 'instance', 'results')
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def _save_result_data(result_sets, log_id):
+    """Serialize result_sets to JSON.
+    If the payload exceeds _RESULT_INLINE_LIMIT bytes, write it to a file and
+    return a 'file:<path>' sentinel so MySQL only stores a small pointer.
+    Otherwise return the raw JSON string for inline storage."""
+    payload = json.dumps(result_sets, default=str)
+    if len(payload) > _RESULT_INLINE_LIMIT:
+        path = os.path.join(_results_dir(), f'{log_id}.json')
+        with open(path, 'w', encoding='utf-8') as fh:
+            fh.write(payload)
+        return f'file:{path}'
+    return payload
+
+
+def _load_result_data(raw):
+    """Inverse of _save_result_data.  Accepts either a 'file:<path>' sentinel
+    or a plain JSON string and returns the parsed result sets list."""
+    if raw and raw.startswith('file:'):
+        path = raw[5:]
+        with open(path, 'r', encoding='utf-8') as fh:
+            return json.load(fh)
+    return json.loads(raw)
+
 def get_user_allowed_modules(user):
     if user.is_admin():
         return Module.query.all()
@@ -81,6 +116,12 @@ def cleanup_old_results():
         ).all()
         
         for log in stale:
+            # Delete the on-disk file if this was a large result
+            if log.result_data and log.result_data.startswith('file:'):
+                try:
+                    os.remove(log.result_data[5:])
+                except OSError:
+                    pass
             log.result_data = None
         
         if stale:
@@ -372,7 +413,7 @@ def _run_sp_background(app, log_id, module_id, connection_id, db_name, object_ty
                 log.message = log_msg
                 if result_sets:
                     print(f"[_run_sp_background] Serializing results for log_id={log_id}...", file=sys.stderr, flush=True)
-                    log.result_data = json.dumps(result_sets, default=str)
+                    log.result_data = _save_result_data(result_sets, log_id)
             
             print(f"[_run_sp_background] Committing final status for log_id={log_id}...", file=sys.stderr, flush=True)
             try:
@@ -391,7 +432,7 @@ def _run_sp_background(app, log_id, module_id, connection_id, db_name, object_ty
                     log.status = 'success' if not error_msg else 'error'
                     log.message = log_msg
                     if result_sets and not error_msg:
-                        log.result_data = json.dumps(result_sets, default=str)
+                        log.result_data = _save_result_data(result_sets, log_id)
                     db.session.commit()
             print(f"[_run_sp_background] Execution log_id={log_id} finished successfully.", file=sys.stderr, flush=True)
         except Exception as thread_ex:
@@ -579,7 +620,7 @@ def execute(module_id):
                            status='success', message=log_msg,
                            end_time=dt.now(tz.utc), notified=True)
             if result_sets:
-                log.result_data = json.dumps(result_sets, default=str)
+                log.result_data = _save_result_data(result_sets, log.id)
             db.session.add(log)
             db.session.commit()
             
@@ -753,8 +794,8 @@ def view_execution_results(log_id):
         return redirect(url_for('portal.my_executions'))
     
     try:
-        result_sets = json.loads(log.result_data)
-    except json.JSONDecodeError:
+        result_sets = _load_result_data(log.result_data)
+    except (json.JSONDecodeError, OSError, ValueError):
         flash('Could not parse stored results.', 'danger')
         return redirect(url_for('portal.my_executions'))
     
