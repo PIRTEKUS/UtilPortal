@@ -10,6 +10,14 @@ class Config:
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or \
         'sqlite:///' + os.path.join(basedir, 'app.db')
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        # Recycle connections every 55 s — just under MySQL's default 60 s
+        # wait_timeout — prevents "MySQL server has gone away" on long SP calls.
+        'pool_recycle': 55,
+        # Emit a lightweight SELECT 1 before handing out a pooled connection.
+        # If the connection is dead, SQLAlchemy transparently reconnects.
+        'pool_pre_ping': True,
+    }
     
     # Placeholders for future Microsoft Entra ID (Azure AD) SSO
     AZURE_CLIENT_ID = os.environ.get('AZURE_CLIENT_ID')

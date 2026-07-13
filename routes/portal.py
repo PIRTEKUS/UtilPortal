@@ -375,7 +375,24 @@ def _run_sp_background(app, log_id, module_id, connection_id, db_name, object_ty
                     log.result_data = json.dumps(result_sets, default=str)
             
             print(f"[_run_sp_background] Committing final status for log_id={log_id}...", file=sys.stderr, flush=True)
-            db.session.commit()
+            try:
+                db.session.commit()
+            except Exception as commit_ex:
+                # The MySQL connection may have gone stale while the long-running
+                # SP was executing (MySQL default wait_timeout = 60 s).  Roll back
+                # the dead session, let SQLAlchemy open a fresh connection from the
+                # pool, and retry once.
+                print(f"[_run_sp_background] First commit failed for log_id={log_id} ({commit_ex}); retrying with fresh connection.", file=sys.stderr, flush=True)
+                db.session.rollback()
+                db.session.remove()  # discard stale connection, force new one
+                log = AuditLog.query.get(log_id)
+                if log:
+                    log.end_time = dt.now(tz.utc)
+                    log.status = 'success' if not error_msg else 'error'
+                    log.message = log_msg
+                    if result_sets and not error_msg:
+                        log.result_data = json.dumps(result_sets, default=str)
+                    db.session.commit()
             print(f"[_run_sp_background] Execution log_id={log_id} finished successfully.", file=sys.stderr, flush=True)
         except Exception as thread_ex:
             print(f"[_run_sp_background] Exception caught in thread for log_id={log_id}: {thread_ex}", file=sys.stderr, flush=True)
