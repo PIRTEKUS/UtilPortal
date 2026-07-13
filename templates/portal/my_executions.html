@@ -141,17 +141,17 @@
                             {% if log.result_data %}
                                 {% if log.id in large_result_ids %}
                                 {# Result is too large to view in browser — download only #}
-                                <a href="{{ url_for('portal.download_excel', log_id=log.id) }}"
-                                   class="btn btn-sm btn-success" title="Result is too large to display in browser — download directly">
-                                    <i class="bi bi-file-earmark-excel me-1"></i>Download Excel
+                                <a href="{{ url_for('portal.download_results', log_id=log.id) }}"
+                                   class="btn btn-sm btn-success" title="Result is too large to display in browser — download directly as CSV/ZIP">
+                                    <i class="bi bi-download me-1"></i>Download CSV
                                 </a>
                                 {% else %}
                                 <a href="{{ url_for('portal.view_execution_results', log_id=log.id) }}" class="btn btn-sm btn-outline-success">
                                     <i class="bi bi-table me-1"></i>View
                                 </a>
-                                <a href="{{ url_for('portal.download_excel', log_id=log.id) }}"
-                                   class="btn btn-sm btn-outline-secondary ms-1" title="Download as Excel">
-                                    <i class="bi bi-file-earmark-excel"></i>
+                                <a href="{{ url_for('portal.download_results', log_id=log.id) }}"
+                                   class="btn btn-sm btn-outline-secondary ms-1" title="Download as CSV/ZIP">
+                                    <i class="bi bi-download"></i>
                                 </a>
                                 {% endif %}
                             {% elif log.status == 'running' %}

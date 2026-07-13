@@ -809,13 +809,15 @@ def view_execution_results(log_id):
                            module=log.module, result_sets=result_sets, log_id=log.id)
 
 
-@bp.route('/executions/<int:log_id>/download-excel')
+@bp.route('/executions/<int:log_id>/download')
 @login_required
-def download_excel(log_id):
-    """Stream the stored result set(s) directly as an Excel (.xlsx) file.
-    Works for both inline JSON and large file-backed result data."""
+def download_results(log_id):
+    """Stream the stored result set(s) directly as CSV (or ZIP of CSVs).
+    This is extremely fast, uses almost no memory, and starts downloading
+    instantly, preventing 502 Bad Gateway timeouts on huge datasets."""
     import io
-    import pandas as pd
+    import csv
+    import zipfile
 
     log = AuditLog.query.get_or_404(log_id)
     if log.user_id != current_user.id and not current_user.is_admin():
@@ -831,24 +833,79 @@ def download_excel(log_id):
         flash(f'Could not read result data: {e}', 'danger')
         return redirect(url_for('portal.my_executions'))
 
-    # Build the Excel workbook in memory using pandas
-    output = io.BytesIO()
+    if not result_sets:
+        flash('No data sets found in results.', 'warning')
+        return redirect(url_for('portal.my_executions'))
+
     module_name = (log.module.name if log.module else 'Results').replace(' ', '_')
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        for i, rs in enumerate(result_sets):
-            df = pd.DataFrame(rs.get('rows', []), columns=rs.get('columns', []))
-            sheet = f'Result Set {i + 1}' if len(result_sets) > 1 else 'Results'
-            df.to_excel(writer, sheet_name=sheet, index=False)
-    output.seek(0)
-
     date_str = dt.now().strftime('%Y-%m-%d')
-    filename = f'{module_name}_Results_{date_str}.xlsx'
 
-    return Response(
-        output,
-        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        headers={'Content-Disposition': f'attachment; filename="{filename}"'}
-    )
+    # If there is exactly one result set, stream it directly as a CSV.
+    if len(result_sets) == 1:
+        rs = result_sets[0]
+        columns = rs.get('columns', [])
+        rows = rs.get('rows', [])
+
+        def generate():
+            # Standard CSV writer needs a text stream; we yield strings chunk-by-chunk
+            class StringQueue:
+                def __init__(self):
+                    self.data = []
+                def write(self, s):
+                    self.data.append(s)
+                def flush(self):
+                    pass
+                def get(self):
+                    res = ''.join(self.data)
+                    self.data = []
+                    return res
+
+            queue = StringQueue()
+            writer = csv.writer(queue)
+            
+            # Write UTF-8 BOM so Excel opens the CSV correctly with UTF-8 encoding
+            yield '\ufeff'
+            
+            writer.writerow(columns)
+            yield queue.get()
+            
+            for row in rows:
+                writer.writerow([row.get(col, '') for col in columns])
+                yield queue.get()
+
+        filename = f'{module_name}_Results_{date_str}.csv'
+        return Response(
+            generate(),
+            mimetype='text/csv',
+            headers={'Content-Disposition': f'attachment; filename="{filename}"'}
+        )
+
+    # For multiple result sets, bundle them into a ZIP containing CSVs.
+    else:
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            for i, rs in enumerate(result_sets):
+                columns = rs.get('columns', [])
+                rows = rs.get('rows', [])
+                
+                csv_buffer = io.StringIO()
+                writer = csv.writer(csv_buffer)
+                
+                # Write BOM for UTF-8 compatibility
+                csv_buffer.write('\ufeff')
+                writer.writerow(columns)
+                for row in rows:
+                    writer.writerow([row.get(col, '') for col in columns])
+                
+                zip_file.writestr(f'Result_Set_{i + 1}.csv', csv_buffer.getvalue())
+
+        zip_buffer.seek(0)
+        filename = f'{module_name}_Results_{date_str}.zip'
+        return Response(
+            zip_buffer.getvalue(),
+            mimetype='application/zip',
+            headers={'Content-Disposition': f'attachment; filename="{filename}"'}
+        )
 
 
 @bp.route('/execute/python/stream/<int:module_id>')
