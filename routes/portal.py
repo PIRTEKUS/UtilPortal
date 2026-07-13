@@ -748,8 +748,14 @@ def my_executions():
     
     setting = AppSetting.query.filter_by(key='results_retention_days').first()
     retention_days = int(setting.value) if setting and setting.value else 7
+
+    # IDs whose result payload is stored on disk (too large to view in browser)
+    large_result_ids = {log.id for log in logs
+                        if log.result_data and log.result_data.startswith('file:')}
     
-    return render_template('portal/my_executions.html', logs=logs, retention_days=retention_days)
+    return render_template('portal/my_executions.html', logs=logs,
+                           retention_days=retention_days,
+                           large_result_ids=large_result_ids)
 
 @bp.route('/executions/<int:log_id>/stop', methods=['POST'])
 @login_required
@@ -801,6 +807,48 @@ def view_execution_results(log_id):
     
     return render_template('portal/module_results.html',
                            module=log.module, result_sets=result_sets, log_id=log.id)
+
+
+@bp.route('/executions/<int:log_id>/download-excel')
+@login_required
+def download_excel(log_id):
+    """Stream the stored result set(s) directly as an Excel (.xlsx) file.
+    Works for both inline JSON and large file-backed result data."""
+    import io
+    import pandas as pd
+
+    log = AuditLog.query.get_or_404(log_id)
+    if log.user_id != current_user.id and not current_user.is_admin():
+        abort(403)
+
+    if not log.result_data:
+        flash('No results available for this execution.', 'warning')
+        return redirect(url_for('portal.my_executions'))
+
+    try:
+        result_sets = _load_result_data(log.result_data)
+    except (json.JSONDecodeError, OSError, ValueError) as e:
+        flash(f'Could not read result data: {e}', 'danger')
+        return redirect(url_for('portal.my_executions'))
+
+    # Build the Excel workbook in memory using pandas
+    output = io.BytesIO()
+    module_name = (log.module.name if log.module else 'Results').replace(' ', '_')
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        for i, rs in enumerate(result_sets):
+            df = pd.DataFrame(rs.get('rows', []), columns=rs.get('columns', []))
+            sheet = f'Result Set {i + 1}' if len(result_sets) > 1 else 'Results'
+            df.to_excel(writer, sheet_name=sheet, index=False)
+    output.seek(0)
+
+    date_str = dt.now().strftime('%Y-%m-%d')
+    filename = f'{module_name}_Results_{date_str}.xlsx'
+
+    return Response(
+        output,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        headers={'Content-Disposition': f'attachment; filename="{filename}"'}
+    )
 
 
 @bp.route('/execute/python/stream/<int:module_id>')
