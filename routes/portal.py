@@ -975,6 +975,33 @@ def execute_python_stream(module_id):
     entry_file_arg = request.args.get('entry_file')
     submitted_params = {k: v for k, v in request.args.items() if k != 'entry_file'}
 
+    # Load dynamic parameter definitions to maintain positional order for CLI arguments
+    parameters = []
+    if module.is_python_folder and entry_file_arg:
+        entry_file = entry_file_arg.replace('..', '').lstrip('/')
+        module_dir = os.path.join(os.getcwd(), 'instance', 'modules_data', str(module.id))
+        script_path = os.path.join(module_dir, entry_file)
+        base_name, _ = os.path.splitext(script_path)
+        json_candidates = [
+            f"{base_name}.json",
+            f"{base_name}.parameters.json"
+        ]
+        for candidate in json_candidates:
+            if os.path.exists(candidate):
+                try:
+                    with open(candidate, 'r', encoding='utf-8') as fh:
+                        data = json.load(fh)
+                        if isinstance(data, list):
+                            parameters = data
+                            break
+                except Exception:
+                    pass
+    if not parameters and module.parameters_json:
+        try:
+            parameters = json.loads(module.parameters_json)
+        except Exception:
+            pass
+
     def generate():
         import tempfile
         import shutil
@@ -1094,8 +1121,15 @@ def execute_python_stream(module_id):
                 env[f"PARAM_{str(k)}"] = str(v)
             env["UTILPORTAL_PARAMETERS"] = json.dumps(submitted_params, default=str)
 
+            # --- Prepare Command Line Arguments ---
+            cmd_args = [python_executable, "-u", script_to_run]
+            for param in parameters:
+                name = param.get('name')
+                val = submitted_params.get(name, '')
+                cmd_args.append(str(val))
+
             process = subprocess.Popen(
-                [python_executable, "-u", script_to_run],
+                cmd_args,
                 cwd=cwd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
