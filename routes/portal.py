@@ -12,6 +12,9 @@ import pyodbc
 bp = Blueprint('portal', __name__)
 active_connections = {}
 
+_BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+_INSTANCE_DIR = os.path.join(_BASE_DIR, 'instance')
+
 # Result sets larger than this are written to disk instead of stored in MySQL,
 # avoiding max_allowed_packet / broken-pipe errors for very large SP outputs.
 _RESULT_INLINE_LIMIT = 10 * 1024 * 1024  # 10 MB
@@ -19,7 +22,7 @@ _RESULT_INLINE_LIMIT = 10 * 1024 * 1024  # 10 MB
 
 def _results_dir():
     """Absolute path to the on-disk results store (created on first use)."""
-    d = os.path.join(os.getcwd(), 'instance', 'results')
+    d = os.path.join(_INSTANCE_DIR, 'results')
     os.makedirs(d, exist_ok=True)
     return d
 
@@ -466,7 +469,7 @@ def execute(module_id):
     if module.custom_code or module.is_python_folder:
         py_files = []
         if module.is_python_folder:
-            module_dir = os.path.join(os.getcwd(), 'instance', 'modules_data', str(module.id))
+            module_dir = os.path.join(_INSTANCE_DIR, 'modules_data', str(module.id))
             if os.path.exists(module_dir):
                 for root, _, filenames in os.walk(module_dir):
                     for fname in sorted(filenames):
@@ -757,7 +760,7 @@ def api_module_parameters(module_id):
     if module.is_python_folder and entry_file:
         # Clean the file path to prevent directory traversal
         entry_file = entry_file.replace('..', '').lstrip('/')
-        module_dir = os.path.join(os.getcwd(), 'instance', 'modules_data', str(module.id))
+        module_dir = os.path.join(_INSTANCE_DIR, 'modules_data', str(module.id))
         script_path = os.path.join(module_dir, entry_file)
         
         # Check matching JSON next to it
@@ -979,7 +982,7 @@ def execute_python_stream(module_id):
     parameters = []
     if module.is_python_folder and entry_file_arg:
         entry_file = entry_file_arg.replace('..', '').lstrip('/')
-        module_dir = os.path.join(os.getcwd(), 'instance', 'modules_data', str(module.id))
+        module_dir = os.path.join(_INSTANCE_DIR, 'modules_data', str(module.id))
         script_path = os.path.join(module_dir, entry_file)
         base_name, _ = os.path.splitext(script_path)
         json_candidates = [
@@ -1010,7 +1013,7 @@ def execute_python_stream(module_id):
         from datetime import datetime, timezone as _tz
 
         script_to_run = ""
-        cwd = os.getcwd()
+        cwd = _BASE_DIR
         python_executable = sys.executable
         log_id = None
         execution_logs = []
@@ -1041,7 +1044,7 @@ def execute_python_stream(module_id):
         exit_code = 1
         try:
             if module.is_python_folder:
-                cwd = os.path.join(os.getcwd(), 'instance', 'modules_data', str(module.id))
+                cwd = os.path.join(_INSTANCE_DIR, 'modules_data', str(module.id))
                 entry_file = entry_file_arg or module.python_entry_file or 'main.py'
                 entry_file = entry_file.replace('..', '').lstrip('/')
                 script_to_run = os.path.join(cwd, entry_file)
