@@ -1088,7 +1088,6 @@ def execute_python_stream(module_id):
             yield log_yield(f"Starting execution of module: {module.name}...")
 
             # --- Prepare Environment Variables ---
-            import os
             env = os.environ.copy()
             for k, v in submitted_params.items():
                 env[str(k)] = str(v)
