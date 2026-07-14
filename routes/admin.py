@@ -290,6 +290,18 @@ def create_module():
     )
     mod_type = request.form.get('type')
     
+    # Process parameters_json for all module types
+    raw_params_json = request.form.get('parameters_json', '').strip()
+    if raw_params_json:
+        try:
+            json.loads(raw_params_json)  # validate before storing
+            new_module.parameters_json = raw_params_json
+        except json.JSONDecodeError as je:
+            flash(f'Parameters JSON is invalid: {je}. Module not saved.', 'danger')
+            return redirect(url_for('admin.modules'))
+    else:
+        new_module.parameters_json = None
+        
     if mod_type == 'custom':
         new_module.custom_code = request.form.get('custom_code')
         # Handle zip upload
@@ -317,16 +329,6 @@ def create_module():
         new_module.object_type = request.form.get('object_type')
         new_module.database_name = request.form.get('database_name')
         new_module.stored_proc_name = request.form.get('stored_proc_name')
-        raw_params_json = request.form.get('parameters_json', '').strip()
-        if raw_params_json:
-            try:
-                json.loads(raw_params_json)  # validate before storing
-                new_module.parameters_json = raw_params_json
-            except json.JSONDecodeError as je:
-                flash(f'Parameters JSON is invalid: {je}. Module not saved.', 'danger')
-                return redirect(url_for('admin.modules'))
-        else:
-            new_module.parameters_json = None
 
     db.session.add(new_module)
     db.session.commit()
@@ -343,6 +345,18 @@ def edit_module(module_id):
     module.folder_id = request.form.get('folder_id') or None
     mod_type = request.form.get('type')
     
+    # Process parameters_json for all module types
+    raw_params_json = request.form.get('parameters_json', '').strip()
+    if raw_params_json:
+        try:
+            json.loads(raw_params_json)  # validate before storing
+            module.parameters_json = raw_params_json
+        except json.JSONDecodeError as je:
+            flash(f'Parameters JSON is invalid: {je}. Changes not saved.', 'danger')
+            return redirect(url_for('admin.modules'))
+    else:
+        module.parameters_json = None
+        
     if mod_type == 'custom':
         module.custom_code = request.form.get('custom_code')
         if 'zip_file' in request.files and request.files['zip_file'].filename:
@@ -365,22 +379,11 @@ def edit_module(module_id):
         module.object_type = None
         module.database_name = None
         module.stored_proc_name = None
-        module.parameters_json = None
     else:
         module.connection_id = request.form.get('connection_id') or None
         module.object_type = request.form.get('object_type')
         module.database_name = request.form.get('database_name')
         module.stored_proc_name = request.form.get('stored_proc_name')
-        raw_params_json = request.form.get('parameters_json', '').strip()
-        if raw_params_json:
-            try:
-                json.loads(raw_params_json)  # validate before storing
-                module.parameters_json = raw_params_json
-            except json.JSONDecodeError as je:
-                flash(f'Parameters JSON is invalid: {je}. Changes not saved.', 'danger')
-                return redirect(url_for('admin.modules'))
-        else:
-            module.parameters_json = None
         module.custom_code = None
         module.is_python_folder = False
         

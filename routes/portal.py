@@ -480,7 +480,14 @@ def execute(module_id):
             if entry in py_files:
                 py_files.remove(entry)
             py_files.insert(0, entry)
-        return render_template('portal/module_python.html', module=module, py_files=py_files)
+            
+        parameters = []
+        if module.parameters_json:
+            try:
+                parameters = json.loads(module.parameters_json)
+            except Exception:
+                pass
+        return render_template('portal/module_python.html', module=module, py_files=py_files, parameters=parameters)
         
     # Standard Module (Generic parameter form to Stored Procedure)
     try:
@@ -735,6 +742,52 @@ def api_task_dismiss(log_id):
     return jsonify({'ok': True})
 
 
+@bp.route('/api/modules/<int:module_id>/parameters')
+@login_required
+def api_module_parameters(module_id):
+    """Retrieve parameter definitions dynamically for a specific script.
+    Checks for a local JSON file next to the script first, then falls back
+    to the module's database parameters configuration."""
+    module = Module.query.get_or_404(module_id)
+    entry_file = request.args.get('entry_file')
+    
+    parameters = []
+    
+    # 1. Check for file-specific parameters in zip-based Python folders
+    if module.is_python_folder and entry_file:
+        # Clean the file path to prevent directory traversal
+        entry_file = entry_file.replace('..', '').lstrip('/')
+        module_dir = os.path.join(os.getcwd(), 'instance', 'modules_data', str(module.id))
+        script_path = os.path.join(module_dir, entry_file)
+        
+        # Check matching JSON next to it
+        base_name, _ = os.path.splitext(script_path)
+        json_candidates = [
+            f"{base_name}.json",
+            f"{base_name}.parameters.json"
+        ]
+        
+        for candidate in json_candidates:
+            if os.path.exists(candidate):
+                try:
+                    with open(candidate, 'r', encoding='utf-8') as fh:
+                        data = json.load(fh)
+                        if isinstance(data, list):
+                            parameters = data
+                            return jsonify({'parameters': parameters})
+                except Exception:
+                    pass
+                    
+    # 2. Fallback: load database-configured parameters
+    if module.parameters_json:
+        try:
+            parameters = json.loads(module.parameters_json)
+        except Exception:
+            pass
+            
+    return jsonify({'parameters': parameters})
+
+
 # ──────────────────────────────────────────────
 # My Executions — User's own history
 # ──────────────────────────────────────────────
@@ -920,6 +973,7 @@ def execute_python_stream(module_id):
     # Capture these before entering the generator (no request context inside)
     user_id = current_user.id
     entry_file_arg = request.args.get('entry_file')
+    submitted_params = {k: v for k, v in request.args.items() if k != 'entry_file'}
 
     def generate():
         import tempfile
@@ -948,7 +1002,8 @@ def execute_python_stream(module_id):
                 user_id=user_id,
                 module_id=module.id,
                 status='running',
-                message='Execution started.'
+                message='Execution started.',
+                parameters_used=json.dumps(submitted_params, default=str)
             )
             db.session.add(log)
             db.session.commit()
@@ -1032,11 +1087,20 @@ def execute_python_stream(module_id):
 
             yield log_yield(f"Starting execution of module: {module.name}...")
 
+            # --- Prepare Environment Variables ---
+            import os
+            env = os.environ.copy()
+            for k, v in submitted_params.items():
+                env[str(k)] = str(v)
+                env[f"PARAM_{str(k)}"] = str(v)
+            env["UTILPORTAL_PARAMETERS"] = json.dumps(submitted_params, default=str)
+
             process = subprocess.Popen(
                 [python_executable, "-u", script_to_run],
                 cwd=cwd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
+                env=env,
                 text=True,
                 bufsize=1
             )

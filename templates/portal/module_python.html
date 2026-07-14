@@ -24,6 +24,20 @@
 
 <div class="row">
     <div class="col-12">
+        <!-- Parameters Card (rendered dynamically) -->
+        <div id="parameters-card" class="card shadow border-primary mb-4" style="display: none;">
+            <div class="card-header bg-dark text-white">
+                <span class="fw-bold"><i class="fas fa-sliders-h text-primary me-2"></i>Required Parameters</span>
+            </div>
+            <div class="card-body">
+                <form id="pythonModuleForm" class="needs-validation" novalidate>
+                    <div id="parameters-fields" class="row g-3">
+                        <!-- Fields dynamically injected by JS -->
+                    </div>
+                </form>
+            </div>
+        </div>
+
         <div class="card shadow border-secondary">
             <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
                 <span class="font-monospace"><i class="fas fa-terminal me-2"></i>Console Output</span>
@@ -68,11 +82,126 @@
     const baseStreamUrl = "{{ url_for('portal.execute_python_stream', module_id=module.id) }}";
     const isPythonFolder = {{ 'true' if module.is_python_folder else 'false' }};
 
+    // Render parameters dynamically in JS
+    function renderParameters(parameters) {
+        const card = document.getElementById('parameters-card');
+        const fieldsContainer = document.getElementById('parameters-fields');
+        fieldsContainer.innerHTML = '';
+        
+        if (!parameters || parameters.length === 0) {
+            card.style.display = 'none';
+            return;
+        }
+        
+        card.style.display = 'block';
+        
+        parameters.forEach(param => {
+            const col = document.createElement('div');
+            col.className = 'col-md-6 col-12';
+            
+            let html = '';
+            const requiredAttr = param.required ? 'required' : '';
+            const placeholderAttr = param.placeholder ? `placeholder="${param.placeholder}"` : '';
+            
+            if (param.type === 'checkbox') {
+                html = `
+                    <div class="form-check mt-4">
+                        <input class="form-check-input bg-dark border-secondary" type="checkbox" id="param-${param.name}" name="${param.name}" value="1">
+                        <label class="form-check-label" for="param-${param.name}">${param.label}</label>
+                    </div>
+                `;
+            } else if (param.type === 'select') {
+                let optionsHtml = '<option value="" disabled selected>Select an option...</option>';
+                if (param.options) {
+                    param.options.forEach(opt => {
+                        optionsHtml += `<option value="${opt.value}">${opt.label}</option>`;
+                    });
+                }
+                html = `
+                    <label for="param-${param.name}" class="form-label small fw-semibold text-muted mb-1">${param.label}</label>
+                    <select class="form-select bg-dark text-light border-secondary" id="param-${param.name}" name="${param.name}" ${requiredAttr}>
+                        ${optionsHtml}
+                    </select>
+                `;
+            } else if (param.type === 'textarea') {
+                col.className = 'col-12';
+                html = `
+                    <label for="param-${param.name}" class="form-label small fw-semibold text-muted mb-1">${param.label}</label>
+                    <textarea class="form-control" id="param-${param.name}" name="${param.name}" rows="3" ${requiredAttr} ${placeholderAttr}></textarea>
+                `;
+            } else if (param.type === 'date') {
+                html = `
+                    <label for="param-${param.name}" class="form-label small fw-semibold text-muted mb-1">${param.label}</label>
+                    <input type="date" class="form-control" id="param-${param.name}" name="${param.name}" ${requiredAttr}>
+                `;
+            } else if (param.type === 'datetime-local') {
+                html = `
+                    <label for="param-${param.name}" class="form-label small fw-semibold text-muted mb-1">${param.label}</label>
+                    <input type="datetime-local" class="form-control" id="param-${param.name}" name="${param.name}" ${requiredAttr}>
+                `;
+            } else if (param.type === 'number') {
+                html = `
+                    <label for="param-${param.name}" class="form-label small fw-semibold text-muted mb-1">${param.label}</label>
+                    <input type="number" class="form-control" id="param-${param.name}" name="${param.name}" ${requiredAttr} ${placeholderAttr}>
+                `;
+            } else {
+                html = `
+                    <label for="param-${param.name}" class="form-label small fw-semibold text-muted mb-1">${param.label}</label>
+                    <input type="text" class="form-control" id="param-${param.name}" name="${param.name}" ${requiredAttr} ${placeholderAttr}>
+                `;
+            }
+            
+            if (param.help) {
+                html += `<div class="form-text text-muted small mt-1">${param.help}</div>`;
+            }
+            
+            col.innerHTML = html;
+            fieldsContainer.appendChild(col);
+        });
+    }
+
+    // Load parameters from the dynamic parameter resolution API
+    async function loadParameters() {
+        const fileSelect = document.getElementById('entry-file-select');
+        const entryFile = fileSelect ? fileSelect.value : '';
+        const url = `/portal/api/modules/{{ module.id }}/parameters?entry_file=` + encodeURIComponent(entryFile);
+        
+        try {
+            const response = await fetch(url);
+            if (response.ok) {
+                const data = await response.json();
+                renderParameters(data.parameters);
+            }
+        } catch (err) {
+            console.error('Failed to load parameters:', err);
+        }
+    }
+
+    // Initialize/Bind entry file change event
+    const fileSelect = document.getElementById('entry-file-select');
+    if (fileSelect) {
+        fileSelect.addEventListener('change', loadParameters);
+    }
+    loadParameters();
+
+    // Form execution
     document.getElementById('start-btn').addEventListener('click', async function () {
         const btn = this;
         const output = document.getElementById('console-output');
         const statusBadge = document.getElementById('status-badge');
         const fileSelect = document.getElementById('entry-file-select');
+        const form = document.getElementById('pythonModuleForm');
+
+        // Form validation
+        if (form) {
+            form.classList.add('was-validated');
+            if (!form.checkValidity()) {
+                // Focus the first invalid element
+                const firstInvalid = form.querySelector(':invalid');
+                if (firstInvalid) firstInvalid.focus();
+                return;
+            }
+        }
 
         btn.disabled = true;
         btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Running...';
@@ -80,14 +209,22 @@
         statusBadge.textContent = 'Running';
         output.textContent = '';
 
-        let streamUrl = baseStreamUrl;
+        const urlParams = new URLSearchParams();
         if (isPythonFolder && fileSelect) {
-            streamUrl += '?entry_file=' + encodeURIComponent(fileSelect.value);
+            urlParams.append('entry_file', fileSelect.value);
         }
 
+        // Serialize all form parameters
+        if (form) {
+            const formData = new FormData(form);
+            for (const [key, value] of formData.entries()) {
+                urlParams.append(key, value);
+            }
+        }
+
+        const streamUrl = baseStreamUrl + '?' + urlParams.toString();
+
         try {
-            // Use fetch + ReadableStream instead of EventSource so it never
-            // auto-reconnects (which would start a duplicate execution).
             const response = await fetch(streamUrl);
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
@@ -122,7 +259,6 @@
                                 }
                             }
                         }
-                        // Lines starting with ':' are SSE keepalive comments — ignore them
                     }
                 }
             }

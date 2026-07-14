@@ -100,6 +100,11 @@
                                                         <label class="form-label">Description</label>
                                                         <textarea name="description" class="form-control" rows="2">{{ module.description }}</textarea>
                                                     </div>
+                                                    <div class="col-12">
+                                                        <label class="form-label">Parameters JSON</label>
+                                                        <textarea name="parameters_json" class="form-control font-monospace" rows="3" placeholder="[ {&quot;name&quot;: &quot;param&quot;, &quot;label&quot;: &quot;Param&quot;, &quot;type&quot;: &quot;text&quot;, &quot;required&quot;: true} ]">{{ module.parameters_json or '' }}</textarea>
+                                                        <div class="form-text">Optional JSON array defining parameters (e.g. for SPs or Python scripts).</div>
+                                                    </div>
 
                                                     <!-- Generic SP fields -->
                                                     <div class="col-12 edit-generic-fields-{{ module.id }}" style="display: {% if module.custom_code or module.is_python_folder %}none{% else %}block{% endif %};">
@@ -135,10 +140,6 @@
                                                             <div class="col-md-6">
                                                                 <label class="form-label">Stored Procedure Name / Job Name</label>
                                                                 <input type="text" name="stored_proc_name" class="form-control" value="{{ module.stored_proc_name or '' }}">
-                                                            </div>
-                                                            <div class="col-12">
-                                                                <label class="form-label">Parameters JSON</label>
-                                                                <textarea name="parameters_json" class="form-control font-monospace" rows="3">{{ module.parameters_json or '' }}</textarea>
                                                             </div>
                                                         </div>
                                                     </div>
@@ -236,6 +237,11 @@
                             <label class="form-label">Description</label>
                             <textarea name="description" class="form-control" rows="2" placeholder="Brief explanation of what this does..."></textarea>
                         </div>
+                        <div class="col-12">
+                            <label class="form-label">Parameters JSON</label>
+                            <textarea name="parameters_json" class="form-control font-monospace" rows="3" placeholder="[ {&quot;name&quot;: &quot;param&quot;, &quot;label&quot;: &quot;Param&quot;, &quot;type&quot;: &quot;text&quot;, &quot;required&quot;: true} ]"></textarea>
+                            <div class="form-text">Optional JSON array defining parameters (e.g. for SPs or Python scripts).</div>
+                        </div>
 
                         <!-- Generic SP fields -->
                         <div class="col-12 create-generic-fields">
@@ -267,10 +273,6 @@
                                 <div class="col-md-6">
                                     <label class="form-label">Stored Procedure Name / Job Name</label>
                                     <input type="text" name="stored_proc_name" class="form-control" placeholder="e.g. sp_reset_vpn">
-                                </div>
-                                <div class="col-12">
-                                    <label class="form-label">Parameters JSON</label>
-                                    <textarea name="parameters_json" class="form-control font-monospace" rows="3"></textarea>
                                 </div>
                             </div>
                         </div>
