@@ -27,12 +27,22 @@ def _results_dir():
     return d
 
 
+def _json_default(obj):
+    """Custom JSON encoder fallback.  Forces decimal.Decimal objects to format
+    without scientific notation (e.g. 0E-8 becomes '0.00000000'), preventing
+    garbled exponential representations in CSV/Excel exports."""
+    import decimal
+    if isinstance(obj, decimal.Decimal):
+        return f"{obj:f}"
+    return str(obj)
+
+
 def _save_result_data(result_sets, log_id):
     """Serialize result_sets to JSON.
     If the payload exceeds _RESULT_INLINE_LIMIT bytes, write it to a file and
     return a 'file:<path>' sentinel so MySQL only stores a small pointer.
     Otherwise return the raw JSON string for inline storage."""
-    payload = json.dumps(result_sets, default=str)
+    payload = json.dumps(result_sets, default=_json_default)
     if len(payload) > _RESULT_INLINE_LIMIT:
         path = os.path.join(_results_dir(), f'{log_id}.json')
         with open(path, 'w', encoding='utf-8') as fh:
