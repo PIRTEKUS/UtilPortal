@@ -479,18 +479,22 @@ def _get_sp_parameter_comments(odbc_conn, sp_name):
             import re
             text = row.definition
             for line in text.splitlines():
-                line = line.strip()
-                # Find parameter name starting with @
+                # Split by comment marker '--'
+                parts = line.split('--', 1)
+                code_part = parts[0].strip()
+                
+                # Extract parameter if present on this line
                 param_match = re.search(r'(@[a-zA-Z0-9_]+)', line)
                 if param_match:
                     param_name = param_match.group(1)
-                    comment_index = line.find('--')
-                    if comment_index != -1:
-                        comment = line[comment_index + 2:].strip()
-                        # Strip leading/trailing single/double quotes from comment
-                        comment = comment.strip("'\"")
+                    if len(parts) > 1:
+                        comment = parts[1].strip().strip("'\"")
                         if comment:
                             comments[param_name] = comment
+                            
+                # Stop parsing once we hit the 'AS' keyword (case-insensitive whole word) in the code portion
+                if re.search(r'\bAS\b', code_part, re.IGNORECASE):
+                    break
         cursor.close()
     except Exception as e:
         print(f"Error fetching SP comments: {e}", file=sys.stderr)
