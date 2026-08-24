@@ -1209,6 +1209,8 @@ def execute_python_stream(module_id):
                 env[str(k)] = str(v)
                 env[f"PARAM_{str(k)}"] = str(v)
             env["UTILPORTAL_PARAMETERS"] = json.dumps(submitted_params, default=str)
+            env["PYTHONUNBUFFERED"] = "1"
+            env["PYTHONIOENCODING"] = "utf-8"
 
             # --- Prepare Command Line Arguments ---
             cmd_args = [python_executable, "-u", script_to_run]
@@ -1297,6 +1299,8 @@ def execute_python_stream(module_id):
     # Tell nginx NOT to buffer this response — critical for real-time output
     resp.headers['X-Accel-Buffering'] = 'no'
     resp.headers['Cache-Control'] = 'no-cache'
+    resp.headers['Connection'] = 'keep-alive'
+    resp.headers['Content-Encoding'] = 'identity'
     return resp
 
 
@@ -1359,5 +1363,7 @@ def execute_sp_stream(log_id):
     resp = Response(stream_with_context(generate()), mimetype='text/event-stream')
     resp.headers['X-Accel-Buffering'] = 'no'
     resp.headers['Cache-Control'] = 'no-cache'
+    resp.headers['Connection'] = 'keep-alive'
+    resp.headers['Content-Encoding'] = 'identity'
     return resp
 
