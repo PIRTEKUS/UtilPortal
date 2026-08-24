@@ -36,12 +36,18 @@
                             {% for module in modules %}
                             <tr>
                                 <td>{{ module.id }}</td>
-                                <td class="fw-bold text-primary">{{ module.name }}</td>
+                                <td class="fw-bold text-primary">
+                                    <span style="display: inline-block; width: {{ module.depth * 24 }}px;"></span>
+                                    {% if module.depth > 0 %}
+                                    <span class="text-muted me-1">├─</span>
+                                    {% endif %}
+                                    <i class="bi bi-hdd-network-fill me-1"></i>{{ module.name }}
+                                </td>
                                 <td>
-                                    {% if module.folder %}
-                                    <span class="badge bg-secondary"><i class="fas fa-folder text-warning me-1"></i> {{ module.folder.name }}</span>
+                                    {% if module.folder_prefix %}
+                                    <span class="badge bg-secondary"><i class="fas fa-folder text-warning me-1"></i> {{ module.folder_prefix }}</span>
                                     {% else %}
-                                    <span class="text-muted">None</span>
+                                    <span class="text-muted">Root Level</span>
                                     {% endif %}
                                 </td>
                                 <td>
@@ -57,7 +63,19 @@
                                     {% endif %}
                                 </td>
                                 <td class="text-end">
-                                    <button class="btn btn-sm btn-outline-info me-1" 
+                                    <div class="btn-group me-2">
+                                        <form action="{{ url_for('admin.move_module', module_id=module.id, direction='up') }}" method="POST" class="d-inline">
+                                            <button type="submit" class="btn btn-sm btn-outline-secondary" title="Move Up">
+                                                <i class="fas fa-chevron-up"></i>
+                                            </button>
+                                        </form>
+                                        <form action="{{ url_for('admin.move_module', module_id=module.id, direction='down') }}" method="POST" class="d-inline">
+                                            <button type="submit" class="btn btn-sm btn-outline-secondary" title="Move Down">
+                                                <i class="fas fa-chevron-down"></i>
+                                            </button>
+                                        </form>
+                                    </div>
+                                    <button class="btn btn-sm btn-outline-info" 
                                         data-bs-toggle="modal" 
                                         data-bs-target="#editModuleModal{{ module.id }}">
                                         <i class="bi bi-pencil"></i> Edit

@@ -66,7 +66,14 @@
                         {% for folder in folders %}
                         <tr>
                             <td>{{ folder.id }}</td>
-                            <td><i class="fas fa-folder text-warning me-2"></i><span class="fw-bold">{{ folder.name }}</span></td>
+                            <td>
+                                <span style="display: inline-block; width: {{ folder.depth * 24 }}px;"></span>
+                                {% if folder.depth > 0 %}
+                                <span class="text-muted me-1">└─</span>
+                                {% endif %}
+                                <i class="fas fa-folder text-warning me-2"></i>
+                                <span class="fw-bold">{{ folder.name }}</span>
+                            </td>
                             <td>
                                 {% if folder.parent %}
                                 <span class="badge bg-secondary">{{ folder.parent.name }}</span>
@@ -78,6 +85,18 @@
                                 <span class="badge bg-info">{{ folder.modules|length }} Modules</span>
                             </td>
                             <td class="text-end">
+                                <div class="btn-group me-2">
+                                    <form action="{{ url_for('admin.move_folder', folder_id=folder.id, direction='up') }}" method="POST" class="d-inline">
+                                        <button type="submit" class="btn btn-sm btn-outline-secondary" title="Move Up">
+                                            <i class="fas fa-chevron-up"></i>
+                                        </button>
+                                    </form>
+                                    <form action="{{ url_for('admin.move_folder', folder_id=folder.id, direction='down') }}" method="POST" class="d-inline">
+                                        <button type="submit" class="btn btn-sm btn-outline-secondary" title="Move Down">
+                                            <i class="fas fa-chevron-down"></i>
+                                        </button>
+                                    </form>
+                                </div>
                                 <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editFolderModal{{ folder.id }}">
                                     <i class="fas fa-edit"></i> Edit
                                 </button>

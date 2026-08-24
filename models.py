@@ -47,9 +47,10 @@ class Folder(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
     parent_id = db.Column(db.Integer, db.ForeignKey('folder.id'), nullable=True)
+    display_order = db.Column(db.Integer, default=0, nullable=False, server_default='0')
     
-    subfolders = db.relationship('Folder', backref=db.backref('parent', remote_side=[id]), lazy=True, cascade="all, delete-orphan")
-    modules = db.relationship('Module', backref='folder', lazy=True)
+    subfolders = db.relationship('Folder', backref=db.backref('parent', remote_side=[id]), lazy=True, cascade="all, delete-orphan", order_by="Folder.display_order")
+    modules = db.relationship('Module', backref='folder', lazy=True, order_by="Module.display_order")
 
     def __repr__(self):
         return f'<Folder {self.name}>'
@@ -121,6 +122,7 @@ class Module(db.Model):
     custom_code = db.Column(db.Text) # Direct code entry
     is_python_folder = db.Column(db.Boolean, default=False) # Whether it's a ZIP/folder module
     python_entry_file = db.Column(db.String(255)) # main file to run within the folder
+    display_order = db.Column(db.Integer, default=0, nullable=False, server_default='0')
 
     def __repr__(self):
         return f'<Module {self.name}>'

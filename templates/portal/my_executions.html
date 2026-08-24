@@ -75,14 +75,36 @@
                 <thead class="table-light">
                     <tr>
                         <th style="width:40px"></th>
-                        <th style="width:60px">#</th>
-                        <th>Status</th>
-                        <th>Module</th>
-                        <th>Started</th>
-                        <th>Finished</th>
-                        <th>Duration</th>
-                        <th>Message</th>
-                        <th class="text-end">Results</th>
+                        <th style="width:80px; cursor: pointer;" onclick="sortTable(1)" class="sort-header" data-column="1"># <i class="bi bi-arrow-down-up small text-muted"></i></th>
+                        <th style="width:120px; cursor: pointer;" onclick="sortTable(2)" class="sort-header" data-column="2">Status <i class="bi bi-arrow-down-up small text-muted"></i></th>
+                        <th style="cursor: pointer;" onclick="sortTable(3)" class="sort-header" data-column="3">Module <i class="bi bi-arrow-down-up small text-muted"></i></th>
+                        <th style="cursor: pointer;" onclick="sortTable(4)" class="sort-header" data-column="4">Started <i class="bi bi-arrow-down-up small text-muted"></i></th>
+                        <th style="cursor: pointer;" onclick="sortTable(5)" class="sort-header" data-column="5">Finished <i class="bi bi-arrow-down-up small text-muted"></i></th>
+                        <th style="cursor: pointer;" onclick="sortTable(6)" class="sort-header" data-column="6">Duration <i class="bi bi-arrow-down-up small text-muted"></i></th>
+                        <th style="cursor: pointer;" onclick="sortTable(7)" class="sort-header" data-column="7">Message <i class="bi bi-arrow-down-up small text-muted"></i></th>
+                        <th class="text-end" style="width:120px;">Results</th>
+                    </tr>
+                    <tr id="filter-row" class="bg-light">
+                        <th></th>
+                        <th><input type="text" class="form-control form-control-sm" placeholder="Filter..." id="filter-id" oninput="applyFilters()"></th>
+                        <th>
+                            <select class="form-select form-select-sm" id="filter-status" onchange="applyFilters()">
+                                <option value="">All</option>
+                                <option value="running">Running</option>
+                                <option value="success">Success</option>
+                                <option value="error">Error</option>
+                            </select>
+                        </th>
+                        <th><input type="text" class="form-control form-control-sm" placeholder="Filter..." id="filter-module" oninput="applyFilters()"></th>
+                        <th></th>
+                        <th></th>
+                        <th></th>
+                        <th><input type="text" class="form-control form-control-sm" placeholder="Filter..." id="filter-message" oninput="applyFilters()"></th>
+                        <th class="text-end">
+                            <button class="btn btn-sm btn-outline-secondary w-100" onclick="resetSortAndFilters()" title="Reset Filters and Sort">
+                                <i class="bi bi-arrow-counterclockwise"></i> Reset
+                            </button>
+                        </th>
                     </tr>
                 </thead>
                 <tbody>
@@ -117,7 +139,8 @@
                                 —
                             {% endif %}
                         </td>
-                        <td class="small text-nowrap" id="duration-{{ log.id }}">
+                        {% set delta = (log.end_time - log.timestamp).total_seconds() | int if (log.end_time and log.timestamp) else 0 %}
+                        <td class="small text-nowrap" id="duration-{{ log.id }}" data-duration="{{ delta }}">
                             {% if log.end_time and log.timestamp %}
                                 {% set delta = (log.end_time - log.timestamp).total_seconds() | int %}
                                 {% if delta >= 3600 %}
@@ -243,6 +266,163 @@
 
 {% block scripts %}
 <script>
+    // Grid sorting and filtering logic
+    let originalPairs = [];
+    let currentSortColumn = null;
+    let currentSortDir = 1;
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const tbody = document.querySelector('table tbody');
+        if (tbody) {
+            const mainRows = Array.from(tbody.querySelectorAll('.execution-row'));
+            originalPairs = mainRows.map(row => {
+                const detailId = row.getAttribute('data-target');
+                const detailRow = tbody.querySelector(detailId);
+                return { main: row, detail: detailRow };
+            });
+        }
+    });
+
+    function getCellValue(row, colIndex) {
+        const cell = row.cells[colIndex];
+        if (!cell) return '';
+        
+        if (colIndex === 1) { // ID
+            return parseInt(cell.textContent.trim()) || 0;
+        }
+        if (colIndex === 4 || colIndex === 5) { // Started / Finished
+            return cell.getAttribute('data-utc') || '';
+        }
+        if (colIndex === 6) { // Duration
+            return parseInt(cell.getAttribute('data-duration') || '0') || 0;
+        }
+        return cell.textContent.trim();
+    }
+
+    function sortTable(colIndex) {
+        const tbody = document.querySelector('table tbody');
+        if (!tbody) return;
+        
+        const mainRows = Array.from(tbody.querySelectorAll('.execution-row'));
+        if (mainRows.length === 0) return;
+
+        if (currentSortColumn === colIndex) {
+            currentSortDir = -currentSortDir;
+        } else {
+            currentSortColumn = colIndex;
+            currentSortDir = 1;
+        }
+
+        // Update sort icons
+        document.querySelectorAll('.sort-header').forEach(th => {
+            const icon = th.querySelector('i');
+            if (icon) {
+                const col = parseInt(th.getAttribute('data-column'));
+                if (col === colIndex) {
+                    icon.className = currentSortDir === 1 ? 'bi bi-arrow-up text-primary' : 'bi bi-arrow-down text-primary';
+                } else {
+                    icon.className = 'bi bi-arrow-down-up small text-muted';
+                }
+            }
+        });
+
+        const pairs = mainRows.map(row => {
+            const detailId = row.getAttribute('data-target');
+            const detailRow = tbody.querySelector(detailId);
+            return { main: row, detail: detailRow };
+        });
+
+        pairs.sort((a, b) => {
+            const valA = getCellValue(a.main, colIndex);
+            const valB = getCellValue(b.main, colIndex);
+
+            if (valA === valB) return 0;
+            if (typeof valA === 'number' && typeof valB === 'number') {
+                return (valA - valB) * currentSortDir;
+            }
+            const strA = String(valA).toLowerCase();
+            const strB = String(valB).toLowerCase();
+            return strA.localeCompare(strB) * currentSortDir;
+        });
+
+        // Re-append to tbody in sorted order
+        tbody.innerHTML = '';
+        pairs.forEach(pair => {
+            tbody.appendChild(pair.main);
+            if (pair.detail) tbody.appendChild(pair.detail);
+        });
+    }
+
+    function applyFilters() {
+        const tbody = document.querySelector('table tbody');
+        if (!tbody) return;
+        
+        const mainRows = Array.from(tbody.querySelectorAll('.execution-row'));
+        const filterId = document.getElementById('filter-id').value.trim().toLowerCase();
+        const filterStatus = document.getElementById('filter-status').value.trim().toLowerCase();
+        const filterModule = document.getElementById('filter-module').value.trim().toLowerCase();
+        const filterMessage = document.getElementById('filter-message').value.trim().toLowerCase();
+
+        mainRows.forEach(row => {
+            const idText = row.cells[1].textContent.trim().toLowerCase();
+            const statusText = row.cells[2].textContent.trim().toLowerCase();
+            const moduleText = row.cells[3].textContent.trim().toLowerCase();
+            const messageText = row.cells[7].textContent.trim().toLowerCase();
+
+            const matchesId = !filterId || idText.includes(filterId);
+            const matchesStatus = !filterStatus || statusText.includes(filterStatus);
+            const matchesModule = !filterModule || moduleText.includes(filterModule);
+            const matchesMessage = !filterMessage || messageText.includes(filterMessage);
+
+            const detailId = row.getAttribute('data-target');
+            const detailRow = tbody.querySelector(detailId);
+
+            if (matchesId && matchesStatus && matchesModule && matchesMessage) {
+                row.style.display = '';
+            } else {
+                row.style.display = 'none';
+                if (detailRow) {
+                    detailRow.style.display = 'none';
+                    detailRow.classList.remove('show');
+                    const chevron = row.querySelector('.bi-chevron-down');
+                    if (chevron) chevron.style.transform = '';
+                }
+            }
+        });
+    }
+
+    function resetSortAndFilters() {
+        document.getElementById('filter-id').value = '';
+        document.getElementById('filter-status').value = '';
+        document.getElementById('filter-module').value = '';
+        document.getElementById('filter-message').value = '';
+
+        currentSortColumn = null;
+        currentSortDir = 1;
+
+        document.querySelectorAll('.sort-header').forEach(th => {
+            const icon = th.querySelector('i');
+            if (icon) icon.className = 'bi bi-arrow-down-up small text-muted';
+        });
+
+        const tbody = document.querySelector('table tbody');
+        if (tbody) {
+            tbody.innerHTML = '';
+            originalPairs.forEach(pair => {
+                pair.main.style.display = '';
+                if (pair.detail) {
+                    pair.detail.style.display = 'none';
+                    pair.detail.classList.remove('show');
+                }
+                const chevron = pair.main.querySelector('.bi-chevron-down');
+                if (chevron) chevron.style.transform = '';
+                
+                tbody.appendChild(pair.main);
+                if (pair.detail) tbody.appendChild(pair.detail);
+            });
+        }
+    }
+
     // Copy SQL to clipboard
     function copySQL(logId) {
         var pre = document.getElementById('sql-' + logId);

@@ -23,6 +23,8 @@ with app.app_context():
         "ALTER TABLE audit_log ADD COLUMN pid INT NULL",
         "ALTER TABLE audit_log ADD COLUMN result_data TEXT NULL",
         "ALTER TABLE audit_log ADD COLUMN notified BOOLEAN DEFAULT 0",
+        "ALTER TABLE folder ADD COLUMN display_order INT NOT NULL DEFAULT 0",
+        "ALTER TABLE module ADD COLUMN display_order INT NOT NULL DEFAULT 0",
     ]
 
     for cmd in columns_to_add:

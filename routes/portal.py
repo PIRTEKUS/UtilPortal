@@ -466,6 +466,37 @@ def _run_sp_background(app, log_id, module_id, connection_id, db_name, object_ty
             db.session.remove()
 
 
+def _get_sp_parameter_comments(odbc_conn, sp_name):
+    """Retrieve comments next to the parameters inside a Stored Procedure definition.
+    Returns a dictionary mapping parameter name (e.g. '@RunType') to its inline comment."""
+    comments = {}
+    try:
+        cursor = odbc_conn.cursor()
+        query = "SELECT definition FROM sys.sql_modules WHERE object_id = OBJECT_ID(?)"
+        cursor.execute(query, sp_name)
+        row = cursor.fetchone()
+        if row and row.definition:
+            import re
+            text = row.definition
+            for line in text.splitlines():
+                line = line.strip()
+                # Find parameter name starting with @
+                param_match = re.search(r'(@[a-zA-Z0-9_]+)', line)
+                if param_match:
+                    param_name = param_match.group(1)
+                    comment_index = line.find('--')
+                    if comment_index != -1:
+                        comment = line[comment_index + 2:].strip()
+                        # Strip leading/trailing single/double quotes from comment
+                        comment = comment.strip("'\"")
+                        if comment:
+                            comments[param_name] = comment
+        cursor.close()
+    except Exception as e:
+        print(f"Error fetching SP comments: {e}", file=sys.stderr)
+    return comments
+
+
 @bp.route('/execute/<int:module_id>', methods=['GET', 'POST'])
 @login_required
 def execute(module_id):
@@ -516,13 +547,33 @@ def execute(module_id):
         
     connection_model = ServerConnection.query.get(module.connection_id) if getattr(module, 'connection_id', None) else None
     
-    if not parameters and module.object_type == 'sp' and connection_model and connection_model.server_type == 'sqlserver':
+    # Try fetching comments from SP definition and merge them into configured parameters
+    sp_comments = {}
+    if module.object_type == 'sp' and connection_model and connection_model.server_type == 'sqlserver':
         try:
             conn_str = f"DRIVER={{ODBC Driver 18 for SQL Server}};SERVER={connection_model.host};UID={connection_model.username};PWD={connection_model.password};Encrypt=Optional;TrustServerCertificate=yes;PacketSize=1024;KeepAlive=30;KeepAliveInterval=1;"
             if module.database_name:
                 conn_str += f";DATABASE={module.database_name}"
             
             odbc_conn = pyodbc.connect(conn_str, autocommit=True)
+            sp_comments = _get_sp_parameter_comments(odbc_conn, module.stored_proc_name)
+            
+            for param in parameters:
+                name = param.get('name')
+                if not param.get('help') and name in sp_comments:
+                    param['help'] = sp_comments[name]
+        except Exception:
+            pass
+            
+    if not parameters and module.object_type == 'sp' and connection_model and connection_model.server_type == 'sqlserver':
+        try:
+            if 'odbc_conn' not in locals() or odbc_conn.closed:
+                conn_str = f"DRIVER={{ODBC Driver 18 for SQL Server}};SERVER={connection_model.host};UID={connection_model.username};PWD={connection_model.password};Encrypt=Optional;TrustServerCertificate=yes;PacketSize=1024;KeepAlive=30;KeepAliveInterval=1;"
+                if module.database_name:
+                    conn_str += f";DATABASE={module.database_name}"
+                odbc_conn = pyodbc.connect(conn_str, autocommit=True)
+                sp_comments = _get_sp_parameter_comments(odbc_conn, module.stored_proc_name)
+                
             cursor = odbc_conn.cursor()
             
             query = """
@@ -554,13 +605,18 @@ def execute(module_id):
                     'name': row.ParameterName,
                     'label': param_name.replace('_', ' ').title(),
                     'type': input_type,
-                    'required': input_type != 'checkbox'
+                    'required': input_type != 'checkbox',
+                    'help': sp_comments.get(row.ParameterName)
                 })
                 
             cursor.close()
-            odbc_conn.close()
         except Exception as e:
             flash(f"Warning: Could not fetch parameters dynamically from SP: {str(e)}", "warning")
+        finally:
+            try:
+                odbc_conn.close()
+            except Exception:
+                pass
             
     if request.method == 'POST':
         # Check if this module is already running to prevent concurrent runs

@@ -242,6 +242,26 @@ def edit_role(role_id):
     return redirect(url_for('admin.roles'))
 
 # --- FOLDERS ---
+def get_folders_tree_list():
+    all_folders = Folder.query.all()
+    from collections import defaultdict
+    by_parent = defaultdict(list)
+    for f in all_folders:
+        by_parent[f.parent_id].append(f)
+        
+    for pid in by_parent:
+        by_parent[pid].sort(key=lambda x: (x.display_order, x.name))
+        
+    flat_list = []
+    def traverse(parent_id, depth):
+        for f in by_parent[parent_id]:
+            f.depth = depth
+            flat_list.append(f)
+            traverse(f.id, depth + 1)
+            
+    traverse(None, 0)
+    return flat_list
+
 @bp.route('/folders', methods=['GET', 'POST'])
 @login_required
 @admin_required
@@ -249,13 +269,16 @@ def folders():
     if request.method == 'POST':
         name = request.form.get('name')
         parent_id = request.form.get('parent_id') or None
-        db.session.add(Folder(name=name, parent_id=parent_id))
+        
+        # Default order to be last among siblings
+        siblings_count = Folder.query.filter_by(parent_id=parent_id).count()
+        db.session.add(Folder(name=name, parent_id=parent_id, display_order=siblings_count))
         db.session.commit()
         flash('Folder created successfully.', 'success')
         return redirect(url_for('admin.folders'))
         
-    all_folders = Folder.query.all()
-    return render_template('admin/folders.html', folders=all_folders)
+    all_folders_tree = get_folders_tree_list()
+    return render_template('admin/folders.html', folders=all_folders_tree)
 
 @bp.route('/folders/edit/<int:folder_id>', methods=['POST'])
 @login_required
@@ -269,25 +292,133 @@ def edit_folder(folder_id):
     flash(f'Folder "{folder.name}" updated.', 'success')
     return redirect(url_for('admin.folders'))
 
+@bp.route('/folders/<int:folder_id>/move/<direction>', methods=['POST'])
+@login_required
+@admin_required
+def move_folder(folder_id, direction):
+    folder = Folder.query.get_or_404(folder_id)
+    siblings = Folder.query.filter_by(parent_id=folder.parent_id).order_by(Folder.display_order, Folder.name).all()
+    
+    idx = -1
+    for i, s in enumerate(siblings):
+        if s.id == folder.id:
+            idx = i
+            break
+            
+    if idx != -1:
+        # Normalize sibling display orders first
+        for i, s in enumerate(siblings):
+            s.display_order = i
+        db.session.commit()
+        
+        if direction == 'up' and idx > 0:
+            siblings[idx].display_order = idx - 1
+            siblings[idx - 1].display_order = idx
+            db.session.commit()
+            flash(f'Folder "{folder.name}" moved up.', 'success')
+        elif direction == 'down' and idx < len(siblings) - 1:
+            siblings[idx].display_order = idx + 1
+            siblings[idx + 1].display_order = idx
+            db.session.commit()
+            flash(f'Folder "{folder.name}" moved down.', 'success')
+            
+    return redirect(url_for('admin.folders'))
+
 # --- MODULES ---
+def get_sorted_modules():
+    def get_folder_path(folder):
+        path = []
+        curr = folder
+        while curr:
+            path.insert(0, curr.name)
+            curr = curr.parent
+        return path
+
+    root_modules = Module.query.filter_by(folder_id=None).order_by(Module.display_order, Module.name).all()
+    for m in root_modules:
+        m.depth = 0
+        m.folder_prefix = ""
+        
+    sorted_modules = list(root_modules)
+    
+    all_folders = Folder.query.all()
+    from collections import defaultdict
+    by_parent = defaultdict(list)
+    for f in all_folders:
+        by_parent[f.parent_id].append(f)
+        
+    for pid in by_parent:
+        by_parent[pid].sort(key=lambda x: (x.display_order, x.name))
+        
+    def traverse_folder(folder_id, depth):
+        for folder in by_parent[folder_id]:
+            folder_modules = Module.query.filter_by(folder_id=folder.id).order_by(Module.display_order, Module.name).all()
+            for m in folder_modules:
+                m.depth = depth + 1
+                m.folder_prefix = " / ".join(get_folder_path(folder))
+                sorted_modules.append(m)
+            traverse_folder(folder.id, depth + 1)
+            
+    traverse_folder(None, 0)
+    return sorted_modules
+
 @bp.route('/modules')
 @login_required
 @admin_required
 def modules():
-    all_modules = Module.query.all()
+    all_modules = get_sorted_modules()
     all_connections = ServerConnection.query.all()
-    all_folders = Folder.query.all()
+    all_folders = get_folders_tree_list()
     return render_template('admin/modules.html', modules=all_modules, connections=all_connections, folders=all_folders)
+
+@bp.route('/modules/<int:module_id>/move/<direction>', methods=['POST'])
+@login_required
+@admin_required
+def move_module(module_id, direction):
+    module = Module.query.get_or_404(module_id)
+    siblings = Module.query.filter_by(folder_id=module.folder_id).order_by(Module.display_order, Module.name).all()
+    
+    idx = -1
+    for i, s in enumerate(siblings):
+        if s.id == module.id:
+            idx = i
+            break
+            
+    if idx != -1:
+        # Normalize sibling display orders first
+        for i, s in enumerate(siblings):
+            s.display_order = i
+        db.session.commit()
+        
+        if direction == 'up' and idx > 0:
+            siblings[idx].display_order = idx - 1
+            siblings[idx - 1].display_order = idx
+            db.session.commit()
+            flash(f'Module "{module.name}" moved up.', 'success')
+        elif direction == 'down' and idx < len(siblings) - 1:
+            siblings[idx].display_order = idx + 1
+            siblings[idx + 1].display_order = idx
+            db.session.commit()
+            flash(f'Module "{module.name}" moved down.', 'success')
+            
+    return redirect(url_for('admin.modules'))
 
 @bp.route('/modules/create', methods=['POST'])
 @login_required
 @admin_required
 def create_module():
+    folder_id_val = request.form.get('folder_id') or None
+    if folder_id_val:
+        folder_id_val = int(folder_id_val)
+        
     new_module = Module(
         name=request.form.get('name'), 
         description=request.form.get('description'),
-        folder_id=request.form.get('folder_id') or None
+        folder_id=folder_id_val
     )
+    # Default order to be last in folder
+    siblings_count = Module.query.filter_by(folder_id=folder_id_val).count()
+    new_module.display_order = siblings_count
     mod_type = request.form.get('type')
     
     # Process parameters_json for all module types
@@ -342,7 +473,16 @@ def edit_module(module_id):
     module = Module.query.get_or_404(module_id)
     module.name = request.form.get('name')
     module.description = request.form.get('description')
-    module.folder_id = request.form.get('folder_id') or None
+    
+    # Adjust display_order if the folder changes
+    old_folder_id = module.folder_id
+    new_folder_id = request.form.get('folder_id') or None
+    if new_folder_id:
+        new_folder_id = int(new_folder_id)
+    if old_folder_id != new_folder_id:
+        module.folder_id = new_folder_id
+        module.display_order = Module.query.filter_by(folder_id=new_folder_id).count()
+        
     mod_type = request.form.get('type')
     
     # Process parameters_json for all module types
