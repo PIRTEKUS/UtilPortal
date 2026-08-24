@@ -466,10 +466,12 @@ def _run_sp_background(app, log_id, module_id, connection_id, db_name, object_ty
             db.session.remove()
 
 
-def _get_sp_parameter_comments(odbc_conn, sp_name):
-    """Retrieve comments next to the parameters inside a Stored Procedure definition.
-    Returns a dictionary mapping parameter name (e.g. '@RunType') to its inline comment."""
-    comments = {}
+def _get_sp_parameter_metadata(odbc_conn, sp_name):
+    """Retrieve parameter metadata (comments and required/optional status)
+    from a Stored Procedure definition header.
+    Returns a dict mapping parameter name (e.g. '@RunType') to a dict:
+    {'help': 'inline comment or None', 'required': True/False}"""
+    metadata = {}
     try:
         cursor = odbc_conn.cursor()
         query = "SELECT definition FROM sys.sql_modules WHERE object_id = OBJECT_ID(?)"
@@ -487,18 +489,26 @@ def _get_sp_parameter_comments(odbc_conn, sp_name):
                 param_match = re.search(r'(@[a-zA-Z0-9_]+)', line)
                 if param_match:
                     param_name = param_match.group(1)
+                    has_default = '=' in code_part
+                    
+                    comment = None
                     if len(parts) > 1:
-                        comment = parts[1].strip().strip("'\"")
-                        if comment:
-                            comments[param_name] = comment
+                        c_text = parts[1].strip().strip("'\"")
+                        if c_text:
+                            comment = c_text
                             
+                    metadata[param_name] = {
+                        'help': comment,
+                        'required': not has_default
+                    }
+                    
                 # Stop parsing once we hit the 'AS' keyword (case-insensitive whole word) in the code portion
                 if re.search(r'\bAS\b', code_part, re.IGNORECASE):
                     break
         cursor.close()
     except Exception as e:
-        print(f"Error fetching SP comments: {e}", file=sys.stderr)
-    return comments
+        print(f"Error fetching SP parameter metadata: {e}", file=sys.stderr)
+    return metadata
 
 
 @bp.route('/execute/<int:module_id>', methods=['GET', 'POST'])
@@ -551,8 +561,8 @@ def execute(module_id):
         
     connection_model = ServerConnection.query.get(module.connection_id) if getattr(module, 'connection_id', None) else None
     
-    # Try fetching comments from SP definition and merge them into configured parameters
-    sp_comments = {}
+    # Try fetching metadata from SP definition and merge them into configured parameters
+    sp_metadata = {}
     if module.object_type == 'sp' and connection_model and connection_model.server_type == 'sqlserver':
         try:
             conn_str = f"DRIVER={{ODBC Driver 18 for SQL Server}};SERVER={connection_model.host};UID={connection_model.username};PWD={connection_model.password};Encrypt=Optional;TrustServerCertificate=yes;PacketSize=1024;KeepAlive=30;KeepAliveInterval=1;"
@@ -560,12 +570,15 @@ def execute(module_id):
                 conn_str += f";DATABASE={module.database_name}"
             
             odbc_conn = pyodbc.connect(conn_str, autocommit=True)
-            sp_comments = _get_sp_parameter_comments(odbc_conn, module.stored_proc_name)
+            sp_metadata = _get_sp_parameter_metadata(odbc_conn, module.stored_proc_name)
             
             for param in parameters:
                 name = param.get('name')
-                if not param.get('help') and name in sp_comments:
-                    param['help'] = sp_comments[name]
+                meta = sp_metadata.get(name, {})
+                if not param.get('help') and 'help' in meta:
+                    param['help'] = meta['help']
+                if 'required' not in param and 'required' in meta:
+                    param['required'] = meta['required']
         except Exception:
             pass
             
@@ -576,7 +589,7 @@ def execute(module_id):
                 if module.database_name:
                     conn_str += f";DATABASE={module.database_name}"
                 odbc_conn = pyodbc.connect(conn_str, autocommit=True)
-                sp_comments = _get_sp_parameter_comments(odbc_conn, module.stored_proc_name)
+                sp_metadata = _get_sp_parameter_metadata(odbc_conn, module.stored_proc_name)
                 
             cursor = odbc_conn.cursor()
             
@@ -605,12 +618,15 @@ def execute(module_id):
                 elif data_type in ('varchar', 'nvarchar', 'text', 'ntext') and 'max' not in data_type:
                     input_type = 'text'
                     
+                meta = sp_metadata.get(row.ParameterName, {})
+                is_required = meta.get('required', input_type != 'checkbox')
+                
                 parameters.append({
                     'name': row.ParameterName,
                     'label': param_name.replace('_', ' ').title(),
                     'type': input_type,
-                    'required': input_type != 'checkbox',
-                    'help': sp_comments.get(row.ParameterName)
+                    'required': is_required,
+                    'help': meta.get('help')
                 })
                 
             cursor.close()
