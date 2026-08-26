@@ -183,6 +183,12 @@ def _parse_submitted_params(parameters, form):
     for param in parameters:
         p_name = param.get('name')
         p_type = param.get('type', 'text')
+        
+        # Check if the param is explicitly requested to be passed as NULL
+        if form.get(p_name + '_null') == '1':
+            submitted[p_name] = None
+            continue
+            
         raw_value = form.get(p_name)
         
         if p_type == 'checkbox':
