@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 from app import create_app
 from models import db, ServerConnection, Module, User, AuditLog
-from services.smb_service import parse_smb_auth, normalize_unc_path, format_file_size
+from services.smb_service import parse_smb_auth, normalize_unc_path, format_file_size, join_unc_path
 
 
 class TestSMBFeature(unittest.TestCase):
@@ -39,6 +39,16 @@ class TestSMBFeature(unittest.TestCase):
 
         p3 = normalize_unc_path("10.1.2.3", r"\\FILESERVER1\Share\Data")
         self.assertEqual(p3, r"\\FILESERVER1\Share\Data")
+
+    def test_join_unc_path(self):
+        j1 = join_unc_path(r"\\10.101.1.5\KML", "file.kml")
+        self.assertEqual(j1, r"\\10.101.1.5\KML\file.kml")
+
+        j2 = join_unc_path(r"\\10.101.1.5\KML\\", "file.kml")
+        self.assertEqual(j2, r"\\10.101.1.5\KML\file.kml")
+
+        j3 = join_unc_path(r"\\10.101.1.5\KML/sub/", "/file.kml")
+        self.assertEqual(j3, r"\\10.101.1.5\KML\sub\file.kml")
 
     def test_format_file_size(self):
         self.assertEqual(format_file_size(500), "500 B")

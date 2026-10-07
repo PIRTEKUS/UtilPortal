@@ -46,6 +46,20 @@ def normalize_unc_path(host, raw_path):
     return fr"\\{host}\{clean_p}"
 
 
+def join_unc_path(base_dir, filename):
+    """
+    Safely join a UNC folder path and a filename or subfolder,
+    ensuring standard Windows backslashes and avoiding double slashes.
+    """
+    clean_base = str(base_dir or '').replace('/', '\\').rstrip('\\')
+    clean_file = str(filename or '').replace('/', '\\').lstrip('\\')
+    if not clean_base:
+        return clean_file
+    if not clean_file:
+        return clean_base
+    return f"{clean_base}\\{clean_file}"
+
+
 def register_smb_session(conn, port=445, timeout=15):
     """
     Register or update an authenticated SMB session with smbclient.
@@ -260,7 +274,7 @@ def save_smb_file(conn, dest_folder, file_storage, filename=None, chunk_size=655
         final_filename = filename or file_storage.filename
         # Sanitize filename (prevent directory traversal)
         final_filename = os.path.basename(final_filename).replace('\\', '_').replace('/', '_')
-        target_filepath = smbclient.path.join(target_dir, final_filename)
+        target_filepath = join_unc_path(target_dir, final_filename)
         
         total_bytes = 0
         with smbclient.open_file(target_filepath, mode='wb') as dst:
@@ -290,7 +304,7 @@ def move_smb_file(src_conn, src_folder, dst_conn, dst_folder, filename, chunk_si
     try:
         register_smb_session(src_conn)
         src_dir = normalize_unc_path(src_conn.host, src_folder)
-        src_file = smbclient.path.join(src_dir, filename)
+        src_file = join_unc_path(src_dir, filename)
         
         if not smbclient.path.exists(src_file):
             return False, f"Source file does not exist: {src_file}"
@@ -301,7 +315,7 @@ def move_smb_file(src_conn, src_folder, dst_conn, dst_folder, filename, chunk_si
         if not smbclient.path.exists(dst_dir):
             smbclient.makedirs(dst_dir, exist_ok=True)
             
-        dst_file = smbclient.path.join(dst_dir, filename)
+        dst_file = join_unc_path(dst_dir, filename)
         
         # If on the same host, perform atomic server-side rename/replace
         if src_conn.id == dst_conn.id or src_conn.host.lower() == dst_conn.host.lower():
