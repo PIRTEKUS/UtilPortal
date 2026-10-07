@@ -114,11 +114,18 @@
                                                     <input type="password" name="password" class="form-control"
                                                         placeholder="Leave blank to keep current password">
                                                 </div>
+                                                <div id="editConnAlert{{ conn.id }}" class="alert d-none mb-0" role="alert"></div>
                                             </div>
-                                            <div class="modal-footer border-secondary">
-                                                <button type="button" class="btn btn-secondary"
-                                                    data-bs-dismiss="modal">Cancel</button>
-                                                <button type="submit" class="btn btn-primary">Save Changes</button>
+                                            <div class="modal-footer border-secondary justify-content-between">
+                                                <button type="button" class="btn btn-outline-warning"
+                                                    onclick="testModalCredentials('edit', {{ conn.id }}, this)">
+                                                    <i class="bi bi-broadcast me-1"></i>Test Connection
+                                                </button>
+                                                <div>
+                                                    <button type="button" class="btn btn-secondary"
+                                                        data-bs-dismiss="modal">Cancel</button>
+                                                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                                                </div>
                                             </div>
                                         </form>
                                     </div>
@@ -175,10 +182,16 @@
                         <label class="form-label">Password *</label>
                         <input type="password" name="password" class="form-control" required placeholder="Password">
                     </div>
+                    <div id="createConnAlert" class="alert d-none mb-0" role="alert"></div>
                 </div>
-                <div class="modal-footer border-secondary">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Save Connection</button>
+                <div class="modal-footer border-secondary justify-content-between">
+                    <button type="button" class="btn btn-outline-warning" onclick="testModalCredentials('create', null, this)">
+                        <i class="bi bi-broadcast me-1"></i>Test Connection
+                    </button>
+                    <div>
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Save Connection</button>
+                    </div>
                 </div>
             </form>
         </div>
@@ -188,6 +201,74 @@
 
 {% block scripts %}
 <script>
+function showAlert(elem, type, message) {
+    if (!elem) return;
+    elem.className = `alert alert-${type} mt-3 mb-0`;
+    elem.innerHTML = message;
+    elem.classList.remove('d-none');
+}
+
+async function testModalCredentials(mode, connId = null, btn = null) {
+    let form;
+    let alertBox;
+    if (mode === 'create') {
+        form = document.querySelector('#createConnectionModal form');
+        alertBox = document.getElementById('createConnAlert');
+    } else {
+        form = document.querySelector(`#editConnectionModal${connId} form`);
+        alertBox = document.getElementById(`editConnAlert${connId}`);
+    }
+
+    const host = form.querySelector('[name="host"]').value.trim();
+    const server_type = form.querySelector('[name="server_type"]').value;
+    const username = form.querySelector('[name="username"]').value.trim();
+    const password = form.querySelector('[name="password"]').value;
+
+    if (!host) {
+        showAlert(alertBox, 'danger', 'Please enter a Host / IP Address first.');
+        return;
+    }
+
+    let origHtml = '';
+    if (btn) {
+        origHtml = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Testing...';
+    }
+
+    showAlert(alertBox, 'info', '<span class="spinner-border spinner-border-sm me-2"></span>Testing connection to server...');
+
+    try {
+        const response = await fetch('/admin/api/connections/test-custom', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: JSON.stringify({
+                server_type: server_type,
+                host: host,
+                username: username,
+                password: password,
+                conn_id: connId
+            })
+        });
+        const data = await response.json();
+        if (response.ok && data.success) {
+            showAlert(alertBox, 'success', `<strong><i class="bi bi-check-circle-fill me-1"></i> Success:</strong> ${data.message}`);
+        } else {
+            showAlert(alertBox, 'danger', `<strong><i class="bi bi-x-circle-fill me-1"></i> Connection Failed:</strong> ${data.message || 'Unknown error'}`);
+        }
+    } catch (err) {
+        showAlert(alertBox, 'danger', `<strong><i class="bi bi-x-circle-fill me-1"></i> Connection Failed:</strong> ${err.message}`);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = origHtml;
+        }
+    }
+}
+
 async function testConnection(connId, btn) {
     const originalHtml = btn.innerHTML;
     btn.disabled = true;

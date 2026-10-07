@@ -175,7 +175,7 @@
                                                         <div class="row g-3">
                                                             <div class="col-md-6">
                                                                 <label class="form-label">Destination Server Connection *</label>
-                                                                <select name="upload_connection_id" class="form-select">
+                                                                <select name="upload_connection_id" id="edit_upload_conn_{{ module.id }}" class="form-select">
                                                                     <option value="">-- Select Windows Connection --</option>
                                                                     {% for conn in connections %}
                                                                     <option value="{{ conn.id }}" {% if module.connection_id == conn.id %}selected{% endif %}>{{ conn.name }} ({{ conn.host }})</option>
@@ -184,7 +184,12 @@
                                                             </div>
                                                             <div class="col-md-6">
                                                                 <label class="form-label">Destination Filepath / Folder *</label>
-                                                                <input type="text" name="upload_destination_filepath" class="form-control" value="{{ module.destination_filepath or '' }}" placeholder="e.g. \\10.1.2.3\SharedFolder\Uploads or SharedFolder\Uploads">
+                                                                <div class="input-group">
+                                                                    <input type="text" name="upload_destination_filepath" id="edit_upload_dest_{{ module.id }}" class="form-control" value="{{ module.destination_filepath or '' }}" placeholder="e.g. \\10.1.2.3\SharedFolder\Uploads">
+                                                                    <button type="button" class="btn btn-outline-info" onclick="openFolderPicker('edit_upload_dest_{{ module.id }}', 'edit_upload_conn_{{ module.id }}')">
+                                                                        <i class="bi bi-folder2-open me-1"></i>Browse...
+                                                                    </button>
+                                                                </div>
                                                                 <div class="form-text">UNC path or relative share folder where uploaded files will be placed.</div>
                                                             </div>
                                                         </div>
@@ -197,7 +202,7 @@
                                                         <div class="row g-3">
                                                             <div class="col-md-6">
                                                                 <label class="form-label">Origin Server Connection *</label>
-                                                                <select name="mover_origin_connection_id" class="form-select">
+                                                                <select name="mover_origin_connection_id" id="edit_mover_orig_conn_{{ module.id }}" class="form-select">
                                                                     <option value="">-- Select Origin Connection --</option>
                                                                     {% for conn in connections %}
                                                                     <option value="{{ conn.id }}" {% if module.connection_id == conn.id %}selected{% endif %}>{{ conn.name }} ({{ conn.host }})</option>
@@ -206,12 +211,17 @@
                                                             </div>
                                                             <div class="col-md-6">
                                                                 <label class="form-label">Origin Filepath / Folder *</label>
-                                                                <input type="text" name="mover_origin_filepath" class="form-control" value="{{ module.origin_filepath or '' }}" placeholder="e.g. \\10.1.2.3\SharedFolder\Incoming">
+                                                                <div class="input-group">
+                                                                    <input type="text" name="mover_origin_filepath" id="edit_mover_orig_path_{{ module.id }}" class="form-control" value="{{ module.origin_filepath or '' }}" placeholder="e.g. \\10.1.2.3\SharedFolder\Incoming">
+                                                                    <button type="button" class="btn btn-outline-info" onclick="openFolderPicker('edit_mover_orig_path_{{ module.id }}', 'edit_mover_orig_conn_{{ module.id }}')">
+                                                                        <i class="bi bi-folder2-open me-1"></i>Browse...
+                                                                    </button>
+                                                                </div>
                                                                 <div class="form-text">Folder where users can view and select files to move.</div>
                                                             </div>
                                                             <div class="col-md-6">
                                                                 <label class="form-label">Destination Server Connection *</label>
-                                                                <select name="mover_destination_connection_id" class="form-select">
+                                                                <select name="mover_destination_connection_id" id="edit_mover_dest_conn_{{ module.id }}" class="form-select">
                                                                     <option value="">-- Select Destination Connection --</option>
                                                                     {% for conn in connections %}
                                                                     <option value="{{ conn.id }}" {% if module.destination_connection_id == conn.id %}selected{% endif %}>{{ conn.name }} ({{ conn.host }})</option>
@@ -221,7 +231,12 @@
                                                             </div>
                                                             <div class="col-md-6">
                                                                 <label class="form-label">Destination Filepath / Folder *</label>
-                                                                <input type="text" name="mover_destination_filepath" class="form-control" value="{{ module.destination_filepath or '' }}" placeholder="e.g. \\10.1.2.3\SharedFolder\Archive">
+                                                                <div class="input-group">
+                                                                    <input type="text" name="mover_destination_filepath" id="edit_mover_dest_path_{{ module.id }}" class="form-control" value="{{ module.destination_filepath or '' }}" placeholder="e.g. \\10.1.2.3\SharedFolder\Archive">
+                                                                    <button type="button" class="btn btn-outline-info" onclick="openFolderPicker('edit_mover_dest_path_{{ module.id }}', 'edit_mover_dest_conn_{{ module.id }}')">
+                                                                        <i class="bi bi-folder2-open me-1"></i>Browse...
+                                                                    </button>
+                                                                </div>
                                                                 <div class="form-text">Target folder where files will be moved.</div>
                                                             </div>
                                                             <div class="col-md-6">
@@ -374,7 +389,7 @@
                             <div class="row g-3">
                                 <div class="col-md-6">
                                     <label class="form-label">Destination Server Connection *</label>
-                                    <select name="upload_connection_id" class="form-select">
+                                    <select name="upload_connection_id" id="create_upload_conn" class="form-select">
                                         <option value="">-- Select Windows Connection --</option>
                                         {% for conn in connections %}
                                         <option value="{{ conn.id }}">{{ conn.name }} ({{ conn.host }})</option>
@@ -383,7 +398,12 @@
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label">Destination Filepath / Folder *</label>
-                                    <input type="text" name="upload_destination_filepath" class="form-control" placeholder="e.g. \\10.1.2.3\SharedFolder\Uploads or SharedFolder\Uploads">
+                                    <div class="input-group">
+                                        <input type="text" name="upload_destination_filepath" id="create_upload_dest" class="form-control" placeholder="e.g. \\10.1.2.3\SharedFolder\Uploads">
+                                        <button type="button" class="btn btn-outline-info" onclick="openFolderPicker('create_upload_dest', 'create_upload_conn')">
+                                            <i class="bi bi-folder2-open me-1"></i>Browse...
+                                        </button>
+                                    </div>
                                     <div class="form-text">UNC path or relative share folder where uploaded files will be placed.</div>
                                 </div>
                             </div>
@@ -396,7 +416,7 @@
                             <div class="row g-3">
                                 <div class="col-md-6">
                                     <label class="form-label">Origin Server Connection *</label>
-                                    <select name="mover_origin_connection_id" class="form-select">
+                                    <select name="mover_origin_connection_id" id="create_mover_orig_conn" class="form-select">
                                         <option value="">-- Select Origin Connection --</option>
                                         {% for conn in connections %}
                                         <option value="{{ conn.id }}">{{ conn.name }} ({{ conn.host }})</option>
@@ -405,12 +425,17 @@
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label">Origin Filepath / Folder *</label>
-                                    <input type="text" name="mover_origin_filepath" class="form-control" placeholder="e.g. \\10.1.2.3\SharedFolder\Incoming">
+                                    <div class="input-group">
+                                        <input type="text" name="mover_origin_filepath" id="create_mover_orig_path" class="form-control" placeholder="e.g. \\10.1.2.3\SharedFolder\Incoming">
+                                        <button type="button" class="btn btn-outline-info" onclick="openFolderPicker('create_mover_orig_path', 'create_mover_orig_conn')">
+                                            <i class="bi bi-folder2-open me-1"></i>Browse...
+                                        </button>
+                                    </div>
                                     <div class="form-text">Folder where users can view and select files to move.</div>
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label">Destination Server Connection *</label>
-                                    <select name="mover_destination_connection_id" class="form-select">
+                                    <select name="mover_destination_connection_id" id="create_mover_dest_conn" class="form-select">
                                         <option value="">-- Select Destination Connection --</option>
                                         {% for conn in connections %}
                                         <option value="{{ conn.id }}">{{ conn.name }} ({{ conn.host }})</option>
@@ -420,7 +445,12 @@
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label">Destination Filepath / Folder *</label>
-                                    <input type="text" name="mover_destination_filepath" class="form-control" placeholder="e.g. \\10.1.2.3\SharedFolder\Archive">
+                                    <div class="input-group">
+                                        <input type="text" name="mover_destination_filepath" id="create_mover_dest_path" class="form-control" placeholder="e.g. \\10.1.2.3\SharedFolder\Archive">
+                                        <button type="button" class="btn btn-outline-info" onclick="openFolderPicker('create_mover_dest_path', 'create_mover_dest_conn')">
+                                            <i class="bi bi-folder2-open me-1"></i>Browse...
+                                        </button>
+                                    </div>
                                     <div class="form-text">Target folder where files will be moved.</div>
                                 </div>
                                 <div class="col-md-6">
@@ -470,6 +500,48 @@
                     <button type="submit" class="btn btn-primary">Save Module</button>
                 </div>
             </form>
+        </div>
+    </div>
+</div>
+
+<!-- Folder Picker Modal -->
+<div class="modal fade" id="folderPickerModal" tabindex="-1" aria-hidden="true" data-bs-theme="dark" style="z-index: 1065;">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content bg-dark border-secondary shadow-lg">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title text-info">
+                    <i class="bi bi-folder2-open me-2"></i>Select Folder on Windows Server
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body text-light">
+                <!-- Navigation Breadcrumb & Back -->
+                <div class="d-flex align-items-center mb-3 p-2 rounded bg-secondary bg-opacity-25 border border-secondary">
+                    <button type="button" class="btn btn-sm btn-outline-light me-2" id="folderPickerBackBtn" onclick="folderPickerGoUp()">
+                        <i class="bi bi-arrow-up"></i> Up
+                    </button>
+                    <div class="flex-grow-1 font-monospace text-warning text-break small" id="folderPickerCurrentPath">
+                        Loading...
+                    </div>
+                </div>
+
+                <!-- Folder List Container -->
+                <div id="folderPickerList" class="list-group list-group-flush border border-secondary rounded" style="max-height: 350px; overflow-y: auto;">
+                    <!-- Dynamically populated folder items -->
+                </div>
+
+                <!-- Error / Empty Display -->
+                <div id="folderPickerStatus" class="text-center text-muted py-3 d-none"></div>
+            </div>
+            <div class="modal-footer border-secondary justify-content-between">
+                <div class="small text-muted" id="folderPickerHint">Click a folder to navigate into it, or click "Select Current Folder" to choose it.</div>
+                <div>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-success" id="folderPickerSelectBtn" onclick="confirmFolderSelection()">
+                        <i class="bi bi-check2-circle me-1"></i>Select Current Folder
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
 </div>
@@ -557,5 +629,132 @@
             }
         });
     });
+
+    // --- FOLDER PICKER ---
+    let currentPickerTargetInput = null;
+    let currentPickerConnId = null;
+    let currentPickerState = {
+        current_path: '',
+        parent_path: null,
+        is_root: true
+    };
+
+    function openFolderPicker(inputId, connectionSelectId) {
+        const connSelect = document.getElementById(connectionSelectId);
+        if (!connSelect || !connSelect.value) {
+            alert('Please select a Server Connection first before browsing folders.');
+            return;
+        }
+
+        currentPickerConnId = connSelect.value;
+        currentPickerTargetInput = document.getElementById(inputId);
+        const existingVal = currentPickerTargetInput ? currentPickerTargetInput.value.trim() : '';
+
+        const pickerModalElem = document.getElementById('folderPickerModal');
+        const pickerModal = bootstrap.Modal.getOrCreateInstance(pickerModalElem);
+        pickerModal.show();
+
+        loadFolderDirectory(currentPickerConnId, existingVal);
+    }
+
+    async function loadFolderDirectory(connId, path = '') {
+        const listElem = document.getElementById('folderPickerList');
+        const pathElem = document.getElementById('folderPickerCurrentPath');
+        const statusElem = document.getElementById('folderPickerStatus');
+        const backBtn = document.getElementById('folderPickerBackBtn');
+
+        listElem.innerHTML = '<div class="p-3 text-center text-muted"><span class="spinner-border spinner-border-sm me-2"></span>Loading folders...</div>';
+        statusElem.classList.add('d-none');
+        pathElem.textContent = 'Connecting & querying server...';
+
+        try {
+            const res = await fetch(`/admin/api/connections/${connId}/browse-folders?path=${encodeURIComponent(path)}`);
+            const data = await res.json();
+
+            if (!res.ok || !data.success) {
+                listElem.innerHTML = '';
+                statusElem.className = 'text-center text-danger py-3';
+                statusElem.innerHTML = `<i class="bi bi-exclamation-triangle-fill me-1"></i> ${escapeHtml(data.error || 'Failed to browse folders')}`;
+                statusElem.classList.remove('d-none');
+                pathElem.textContent = path || 'Root';
+                backBtn.disabled = !path;
+                return;
+            }
+
+            currentPickerState = {
+                current_path: data.current_path,
+                parent_path: data.parent_path,
+                is_root: data.is_root
+            };
+
+            pathElem.textContent = data.current_path;
+            backBtn.disabled = data.is_root || !data.parent_path;
+
+            listElem.innerHTML = '';
+            if (!data.folders || data.folders.length === 0) {
+                statusElem.className = 'text-center text-muted py-3';
+                statusElem.innerHTML = '<i class="bi bi-folder-x me-1"></i> No subdirectories or shares found in this folder.';
+                statusElem.classList.remove('d-none');
+            } else {
+                statusElem.classList.add('d-none');
+                data.folders.forEach(folder => {
+                    const a = document.createElement('a');
+                    a.href = '#';
+                    a.className = 'list-group-item list-group-item-action list-group-item-dark d-flex justify-content-between align-items-center py-2';
+                    
+                    const iconClass = folder.is_share ? 'bi bi-hdd-network text-warning' : 'bi bi-folder-fill text-info';
+                    const badgeClass = folder.is_share ? 'bg-warning text-dark' : 'bg-secondary';
+                    const badgeText = folder.is_share ? 'Share' : 'Folder';
+                    
+                    a.innerHTML = `
+                        <div>
+                            <i class="${iconClass} me-2 fs-5 align-middle"></i>
+                            <span class="fw-semibold">${escapeHtml(folder.name)}</span>
+                        </div>
+                        <div>
+                            <span class="badge ${badgeClass} me-2">${badgeText}</span>
+                            <i class="bi bi-chevron-right text-muted"></i>
+                        </div>
+                    `;
+                    a.onclick = (e) => {
+                        e.preventDefault();
+                        loadFolderDirectory(connId, folder.path);
+                    };
+                    listElem.appendChild(a);
+                });
+            }
+        } catch (err) {
+            listElem.innerHTML = '';
+            statusElem.className = 'text-center text-danger py-3';
+            statusElem.innerHTML = `<i class="bi bi-exclamation-triangle-fill me-1"></i> ${escapeHtml(err.message)}`;
+            statusElem.classList.remove('d-none');
+        }
+    }
+
+    function folderPickerGoUp() {
+        if (currentPickerState.parent_path !== null) {
+            loadFolderDirectory(currentPickerConnId, currentPickerState.parent_path);
+        } else {
+            loadFolderDirectory(currentPickerConnId, '');
+        }
+    }
+
+    function confirmFolderSelection() {
+        if (currentPickerTargetInput && currentPickerState.current_path) {
+            currentPickerTargetInput.value = currentPickerState.current_path;
+        }
+        const modalElem = document.getElementById('folderPickerModal');
+        const modalInstance = bootstrap.Modal.getInstance(modalElem);
+        if (modalInstance) {
+            modalInstance.hide();
+        }
+    }
+
+    function escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
 </script>
 {% endblock %}

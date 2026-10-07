@@ -173,6 +173,25 @@ class TestSMBFeature(unittest.TestCase):
             self.assertEqual(res_mv.status_code, 200)
             self.assertIn(b'Move Selected', res_mv.data)
 
+            # Test custom connection test API (invalid host will fail cleanly)
+            res_test = self.client.post('/admin/api/connections/test-custom', json={
+                'server_type': 'windows_share',
+                'host': '127.0.0.1',
+                'username': r'test\user',
+                'password': 'invalidpassword'
+            })
+            self.assertEqual(res_test.status_code, 400)
+            data_test = res_test.get_json()
+            self.assertIn('success', data_test)
+            self.assertFalse(data_test['success'])
+
+            # Test browse folders API (nonexistent / unreachable host returns error JSON)
+            res_browse = self.client.get(f'/admin/api/connections/{conn.id}/browse-folders?path=')
+            self.assertEqual(res_browse.status_code, 400)
+            data_browse = res_browse.get_json()
+            self.assertIn('error', data_browse)
+            self.assertFalse(data_browse['success'])
+
             # Cleanup
             db.session.delete(upload_mod)
             db.session.delete(mover_mod)
@@ -183,3 +202,4 @@ class TestSMBFeature(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+

@@ -42,8 +42,8 @@ def normalize_unc_path(host, raw_path):
     if p.startswith(r'\\'):
         return p
         
-    p = p.lstrip('\\')
-    return fr"\\{host}\{p}"
+    clean_p = p.lstrip('\\')
+    return fr"\\{host}\{clean_p}"
 
 
 def register_smb_session(conn, port=445):
@@ -71,12 +71,84 @@ def test_smb_connection(conn):
         # Attempt to list root shares/directory to verify credentials
         try:
             entries = smbclient.listdir(root_path)
-            return True, f"Successfully connected to {conn.host}. Found {len(entries)} visible root items/shares."
-        except Exception as list_err:
+            shares_str = ", ".join(entries[:6])
+            if len(entries) > 6:
+                shares_str += f" (+{len(entries)-6} more)"
+            return True, f"Successfully connected to {conn.host}. Available shares: [{shares_str}]"
+        except Exception:
             # If root listing is restricted, connection handshake still succeeded
-            return True, f"Connected to {conn.host} (Authentication verified)."
+            return True, f"Successfully connected and authenticated to {conn.host}."
     except Exception as e:
         return False, f"SMB Connection Error: {str(e)}"
+
+
+def browse_smb_folders(conn, raw_path=""):
+    """
+    Browse shares or subdirectories on a Windows Server.
+    If raw_path is empty or root (\\\\host):
+      Returns list of available top-level shares on the host.
+    If raw_path is a share or subfolder (\\\\host\\Share\\SubFolder or Share\\SubFolder):
+      Returns list of subdirectories inside that folder.
+    """
+    register_smb_session(conn)
+    raw_path = (raw_path or "").strip().replace('/', '\\')
+    
+    if not raw_path or raw_path.strip('\\') == '' or raw_path.lower() == fr"\\{conn.host}".lower():
+        # Root level: list shares
+        current_path = fr"\\{conn.host}"
+        folders = []
+        try:
+            share_names = smbclient.listdir(current_path)
+            for name in sorted(share_names, key=lambda x: x.lower()):
+                folders.append({
+                    'name': name,
+                    'path': fr"\\{conn.host}\{name}",
+                    'is_share': True
+                })
+        except Exception as e:
+            raise RuntimeError(f"Could not list shares on {conn.host}: {str(e)}")
+            
+        return {
+            'server_name': conn.name,
+            'server_host': conn.host,
+            'current_path': current_path,
+            'is_root': True,
+            'parent_path': None,
+            'folders': folders
+        }
+    else:
+        # Subfolder level
+        unc_path = normalize_unc_path(conn.host, raw_path)
+        if not smbclient.path.exists(unc_path):
+            raise FileNotFoundError(f"Path not found on {conn.host}: {unc_path}")
+            
+        parts = [p for p in unc_path.split('\\') if p]
+        if len(parts) <= 2:
+            parent_path = fr"\\{conn.host}"
+        else:
+            parent_path = '\\\\' + '\\'.join(parts[:-1])
+            
+        folders = []
+        try:
+            for entry in smbclient.scandir(unc_path):
+                if entry.is_dir():
+                    folders.append({
+                        'name': entry.name,
+                        'path': entry.path,
+                        'is_share': False
+                    })
+        except Exception as e:
+            raise RuntimeError(f"Could not open directory {unc_path}: {str(e)}")
+            
+        folders.sort(key=lambda x: x['name'].lower())
+        return {
+            'server_name': conn.name,
+            'server_host': conn.host,
+            'current_path': unc_path,
+            'is_root': False,
+            'parent_path': parent_path,
+            'folders': folders
+        }
 
 
 def format_file_size(size_bytes):

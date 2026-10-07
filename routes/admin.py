@@ -198,41 +198,90 @@ def get_databases(conn_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@bp.route('/api/connections/<int:conn_id>/test', methods=['POST'])
-@login_required
-@admin_required
-def test_connection(conn_id):
-    conn = ServerConnection.query.get_or_404(conn_id)
-    if conn.server_type == 'windows_share':
+def _execute_connection_test(server_type, host, username, password, name=""):
+    if not host:
+        return False, "Host / IP Address is required."
+    
+    if server_type == 'windows_share':
         from services.smb_service import test_smb_connection
-        success, msg = test_smb_connection(conn)
-        status_code = 200 if success else 400
-        return jsonify({'success': success, 'message': msg}), status_code
-    elif conn.server_type == 'sqlserver':
+        class TempConn:
+            def __init__(self, host, username, password, name=""):
+                self.host = host
+                self.username = username
+                self.password = password
+                self.name = name
+        return test_smb_connection(TempConn(host, username, password, name))
+    elif server_type == 'sqlserver':
         try:
-            conn_str = f"DRIVER={{ODBC Driver 18 for SQL Server}};SERVER={conn.host};UID={conn.username};PWD={conn.password};Encrypt=no;TrustServerCertificate=yes;PacketSize=1024;KeepAlive=30;KeepAliveInterval=1;Connection Timeout=10;"
+            conn_str = f"DRIVER={{ODBC Driver 18 for SQL Server}};SERVER={host};UID={username};PWD={password};Encrypt=no;TrustServerCertificate=yes;PacketSize=1024;KeepAlive=30;KeepAliveInterval=1;Connection Timeout=10;"
             odbc_conn = pyodbc.connect(conn_str, autocommit=True)
             cursor = odbc_conn.cursor()
             cursor.execute("SELECT @@VERSION")
             ver = cursor.fetchone()[0]
             cursor.close()
             odbc_conn.close()
-            return jsonify({'success': True, 'message': f"Connected to SQL Server: {ver[:60]}..."})
+            return True, f"Connected to SQL Server: {ver[:60]}..."
         except Exception as e:
-            return jsonify({'success': False, 'message': str(e)}), 400
-    elif conn.server_type == 'mysql':
+            return False, f"SQL Server Connection Error: {str(e)}"
+    elif server_type == 'mysql':
         try:
             import pymysql
-            m_conn = pymysql.connect(host=conn.host, user=conn.username, password=conn.password, connect_timeout=10)
+            m_conn = pymysql.connect(host=host, user=username, password=password, connect_timeout=10)
             cur = m_conn.cursor()
             cur.execute("SELECT VERSION()")
             ver = cur.fetchone()[0]
             cur.close()
             m_conn.close()
-            return jsonify({'success': True, 'message': f"Connected to MySQL: {ver}"})
+            return True, f"Connected to MySQL: {ver}"
         except Exception as e:
-            return jsonify({'success': False, 'message': str(e)}), 400
-    return jsonify({'success': False, 'message': f'Unsupported connection type: {conn.server_type}'}), 400
+            return False, f"MySQL Connection Error: {str(e)}"
+    return False, f"Unsupported connection type: {server_type}"
+
+@bp.route('/api/connections/test-custom', methods=['POST'])
+@login_required
+@admin_required
+def test_custom_connection():
+    data = request.get_json(silent=True) or request.form
+    server_type = data.get('server_type')
+    host = data.get('host', '').strip()
+    username = data.get('username', '').strip()
+    password = data.get('password', '')
+    conn_id = data.get('conn_id')
+
+    if conn_id and not password:
+        existing_conn = ServerConnection.query.get(conn_id)
+        if existing_conn:
+            password = existing_conn.password
+
+    success, msg = _execute_connection_test(server_type, host, username, password)
+    status_code = 200 if success else 400
+    return jsonify({'success': success, 'message': msg}), status_code
+
+@bp.route('/api/connections/<int:conn_id>/test', methods=['POST'])
+@login_required
+@admin_required
+def test_connection(conn_id):
+    conn = ServerConnection.query.get_or_404(conn_id)
+    success, msg = _execute_connection_test(conn.server_type, conn.host, conn.username, conn.password, conn.name)
+    status_code = 200 if success else 400
+    return jsonify({'success': success, 'message': msg}), status_code
+
+@bp.route('/api/connections/<int:conn_id>/browse-folders')
+@login_required
+@admin_required
+def browse_connection_folders(conn_id):
+    conn = ServerConnection.query.get_or_404(conn_id)
+    if conn.server_type != 'windows_share':
+        return jsonify({'success': False, 'error': 'Directory browsing is only supported for Windows Server (SMB) connections.'}), 400
+    
+    path = request.args.get('path', '').strip()
+    try:
+        from services.smb_service import browse_smb_folders
+        result = browse_smb_folders(conn, path)
+        result['success'] = True
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
 
 # --- ROLES ---
 @bp.route('/roles', methods=['GET', 'POST'])
