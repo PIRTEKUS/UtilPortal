@@ -526,6 +526,17 @@ def execute(module_id):
     if module not in allowed_modules:
         abort(403)
         
+    # File Upload Module
+    if module.object_type == 'file_upload':
+        connection_model = ServerConnection.query.get(module.connection_id) if module.connection_id else None
+        return render_template('portal/module_file_upload.html', module=module, connection=connection_model)
+
+    # File Mover Module
+    if module.object_type == 'file_mover':
+        origin_conn = ServerConnection.query.get(module.connection_id) if module.connection_id else None
+        dest_conn = ServerConnection.query.get(module.destination_connection_id or module.connection_id) if (module.destination_connection_id or module.connection_id) else None
+        return render_template('portal/module_file_mover.html', module=module, origin_connection=origin_conn, destination_connection=dest_conn)
+
     # Python Module
     if module.custom_code or module.is_python_folder:
         py_files = []
@@ -1372,4 +1383,204 @@ def execute_sp_stream(log_id):
     resp.headers['Connection'] = 'keep-alive'
     resp.headers['Content-Encoding'] = 'identity'
     return resp
+
+
+@bp.route('/execute/file_upload/<int:module_id>', methods=['POST'])
+@login_required
+def execute_file_upload(module_id):
+    module = Module.query.get_or_404(module_id)
+    allowed_modules = get_user_allowed_modules(current_user)
+    if module not in allowed_modules or module.object_type != 'file_upload':
+        abort(403)
+
+    connection = ServerConnection.query.get(module.connection_id)
+    if not connection:
+        return jsonify({'error': 'No server connection configured for this upload module.'}), 400
+
+    if 'files' not in request.files:
+        return jsonify({'error': 'No files uploaded in request.'}), 400
+
+    uploaded_files = request.files.getlist('files')
+    if not uploaded_files or all(f.filename == '' for f in uploaded_files):
+        return jsonify({'error': 'No selected files found.'}), 400
+
+    from services.smb_service import save_smb_file, normalize_unc_path
+    
+    start_time = datetime.now(timezone.utc)
+    results = []
+    errors = []
+
+    for f in uploaded_files:
+        if not f.filename:
+            continue
+        success, info, err = save_smb_file(connection, module.destination_filepath, f)
+        if success:
+            results.append(info)
+        else:
+            errors.append(f"{f.filename}: {err}")
+
+    end_time = datetime.now(timezone.utc)
+    dest_path = normalize_unc_path(connection.host, module.destination_filepath)
+
+    status = 'success' if not errors else ('error' if not results else 'warning')
+    msg_lines = [
+        f"File Upload operation on {connection.name} ({connection.host}):",
+        f"Destination: {dest_path}",
+        f"Files processed: {len(results)} succeeded, {len(errors)} failed."
+    ]
+    if results:
+        msg_lines.append("\nUploaded Files:")
+        for r in results:
+            msg_lines.append(f" - {r['filename']} ({r['size_formatted']})")
+    if errors:
+        msg_lines.append("\nErrors:")
+        for e in errors:
+            msg_lines.append(f" - {e}")
+
+    try:
+        log = AuditLog(
+            user_id=current_user.id,
+            module_id=module.id,
+            status=status,
+            message="\n".join(msg_lines),
+            parameters_used=json.dumps({
+                'destination_path': dest_path,
+                'files_uploaded': [r['filename'] for r in results]
+            }),
+            timestamp=start_time,
+            end_time=end_time
+        )
+        db.session.add(log)
+        db.session.commit()
+        log_id = log.id
+    except Exception:
+        db.session.rollback()
+        log_id = None
+
+    if errors and not results:
+        return jsonify({'error': "\n".join(errors)}), 500
+
+    return jsonify({
+        'success': True,
+        'uploaded_files': results,
+        'destination_path': dest_path,
+        'log_id': log_id
+    })
+
+
+@bp.route('/api/modules/<int:module_id>/files')
+@login_required
+def api_module_files(module_id):
+    module = Module.query.get_or_404(module_id)
+    allowed_modules = get_user_allowed_modules(current_user)
+    if module not in allowed_modules:
+        abort(403)
+
+    connection = ServerConnection.query.get(module.connection_id)
+    if not connection:
+        return jsonify({'error': 'No server connection configured for this module.'}), 400
+
+    from services.smb_service import list_smb_files, normalize_unc_path
+    try:
+        files = list_smb_files(connection, module.origin_filepath, module.file_pattern or '*.*')
+        return jsonify({
+            'success': True,
+            'origin_path': normalize_unc_path(connection.host, module.origin_filepath),
+            'files': files,
+            'count': len(files)
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.route('/execute/file_mover/<int:module_id>', methods=['POST'])
+@login_required
+def execute_file_mover(module_id):
+    module = Module.query.get_or_404(module_id)
+    allowed_modules = get_user_allowed_modules(current_user)
+    if module not in allowed_modules or module.object_type != 'file_mover':
+        abort(403)
+
+    origin_conn = ServerConnection.query.get(module.connection_id)
+    dest_conn = ServerConnection.query.get(module.destination_connection_id or module.connection_id)
+
+    if not origin_conn or not dest_conn:
+        return jsonify({'error': 'Origin or Destination connection is not configured properly.'}), 400
+
+    data = request.get_json() or {}
+    filenames = data.get('filenames', [])
+    if not filenames:
+        return jsonify({'error': 'No files selected to move.'}), 400
+
+    from services.smb_service import move_smb_file, normalize_unc_path
+
+    start_time = datetime.now(timezone.utc)
+    moved = []
+    errors = []
+
+    for fn in filenames:
+        safe_fn = os.path.basename(fn)
+        success, err = move_smb_file(
+            src_conn=origin_conn,
+            src_folder=module.origin_filepath,
+            dst_conn=dest_conn,
+            dst_folder=module.destination_filepath,
+            filename=safe_fn
+        )
+        if success:
+            moved.append(safe_fn)
+        else:
+            errors.append(f"{safe_fn}: {err}")
+
+    end_time = datetime.now(timezone.utc)
+    src_path = normalize_unc_path(origin_conn.host, module.origin_filepath)
+    dst_path = normalize_unc_path(dest_conn.host, module.destination_filepath)
+
+    status = 'success' if not errors else ('error' if not moved else 'warning')
+    msg_lines = [
+        f"File Mover operation from {origin_conn.name} to {dest_conn.name}:",
+        f"Origin: {src_path}",
+        f"Destination: {dst_path}",
+        f"Summary: {len(moved)} moved successfully, {len(errors)} failed."
+    ]
+    if moved:
+        msg_lines.append("\nMoved Files:")
+        for m in moved:
+            msg_lines.append(f" - {m}")
+    if errors:
+        msg_lines.append("\nErrors:")
+        for e in errors:
+            msg_lines.append(f" - {e}")
+
+    try:
+        log = AuditLog(
+            user_id=current_user.id,
+            module_id=module.id,
+            status=status,
+            message="\n".join(msg_lines),
+            parameters_used=json.dumps({
+                'origin_path': src_path,
+                'destination_path': dst_path,
+                'files_moved': moved
+            }),
+            timestamp=start_time,
+            end_time=end_time
+        )
+        db.session.add(log)
+        db.session.commit()
+        log_id = log.id
+    except Exception:
+        db.session.rollback()
+        log_id = None
+
+    if errors and not moved:
+        return jsonify({'error': "\n".join(errors)}), 500
+
+    return jsonify({
+        'success': True,
+        'moved_count': len(moved),
+        'destination_path': dst_path,
+        'moved_files': moved,
+        'log_id': log_id
+    })
 

@@ -98,7 +98,7 @@ class ServerConnection(db.Model):
     password = db.Column(db.String(255), nullable=False) # Plain text for simplicity in this iteration
 
     # Relationship to know which modules use this connection
-    modules = db.relationship('Module', backref='connection', lazy=True)
+    modules = db.relationship('Module', foreign_keys='Module.connection_id', backref='connection', lazy=True)
 
     def __repr__(self):
         return f'<ServerConnection {self.name} ({self.server_type})>'
@@ -123,6 +123,13 @@ class Module(db.Model):
     is_python_folder = db.Column(db.Boolean, default=False) # Whether it's a ZIP/folder module
     python_entry_file = db.Column(db.String(255)) # main file to run within the folder
     display_order = db.Column(db.Integer, default=0, nullable=False, server_default='0')
+    # For Windows Share / File Management modules (Upload / Move)
+    destination_connection_id = db.Column(db.Integer, db.ForeignKey('server_connection.id'), nullable=True)
+    origin_filepath = db.Column(db.String(500), nullable=True)
+    destination_filepath = db.Column(db.String(500), nullable=True)
+    file_pattern = db.Column(db.String(100), nullable=True, default='*.*')
+
+    destination_connection = db.relationship('ServerConnection', foreign_keys=[destination_connection_id])
 
     def __repr__(self):
         return f'<Module {self.name}>'

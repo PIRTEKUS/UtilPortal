@@ -12,3 +12,4 @@ openpyxl==3.1.2
 msal==1.25.0
 pyodbc==5.0.1
 pipreqs==0.5.0
+smbprotocol==1.15.0

@@ -1,0 +1,304 @@
+{% extends "base.html" %}
+{% block title %}{{ module.name }} — File Upload{% endblock %}
+
+{% block content %}
+<style>
+    .upload-dropzone {
+        border: 2px dashed #0d6efd;
+        border-radius: 12px;
+        background-color: rgba(13, 110, 253, 0.04);
+        padding: 40px 20px;
+        text-align: center;
+        transition: all 0.2s ease-in-out;
+        cursor: pointer;
+    }
+    .upload-dropzone:hover, .upload-dropzone.dragover {
+        background-color: rgba(13, 110, 253, 0.12);
+        border-color: #0dcaf0;
+        transform: scale(1.005);
+    }
+    .file-item-card {
+        background-color: #212529;
+        border: 1px solid #343a40;
+        border-radius: 8px;
+        padding: 12px 16px;
+        margin-bottom: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+    .file-item-name {
+        font-weight: 500;
+        max-width: 350px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+</style>
+
+<div class="row justify-content-center">
+    <div class="col-lg-9 col-md-11">
+        <div class="card shadow border-primary mb-4 bg-dark text-light">
+            <div class="card-header bg-dark border-secondary">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h4 class="mb-0 text-success">
+                        <i class="bi bi-cloud-arrow-up-fill me-2"></i>{{ module.name }}
+                    </h4>
+                    <a href="{{ url_for('portal.dashboard') }}" class="btn btn-sm btn-outline-secondary">
+                        <i class="bi bi-arrow-left me-1"></i>Back to Dashboard
+                    </a>
+                </div>
+            </div>
+            <div class="card-body">
+                {% if module.description %}
+                <p class="text-muted border-bottom border-secondary pb-3 mb-4">{{ module.description }}</p>
+                {% endif %}
+
+                <!-- Destination Server & Path Info Badge -->
+                <div class="alert alert-dark border-secondary mb-4 p-3 d-flex align-items-center justify-content-between flex-wrap gap-2">
+                    <div>
+                        <div class="text-muted small text-uppercase fw-bold">Target Windows Server</div>
+                        <div class="fw-bold text-info">
+                            <i class="bi bi-hdd-network me-1"></i>{{ connection.name if connection else 'Default Server' }} ({{ connection.host if connection else '—' }})
+                        </div>
+                    </div>
+                    <div class="text-md-end">
+                        <div class="text-muted small text-uppercase fw-bold">Destination Folder</div>
+                        <code class="text-warning font-monospace">{{ module.destination_filepath or '\\' }}</code>
+                    </div>
+                </div>
+
+                <form id="uploadForm" enctype="multipart/form-data">
+                    <!-- Drag & Drop Zone -->
+                    <div class="upload-dropzone mb-4" id="dropzone">
+                        <i class="bi bi-cloud-arrow-up text-primary display-3 mb-3 d-block"></i>
+                        <h5 class="fw-bold mb-2">Drag & Drop Files Here</h5>
+                        <p class="text-muted mb-3">or click to browse from your computer</p>
+                        <input type="file" id="fileInput" name="files" class="d-none" multiple>
+                        <button type="button" class="btn btn-outline-primary px-4" onclick="document.getElementById('fileInput').click()">
+                            <i class="bi bi-folder2-open me-2"></i>Choose Files
+                        </button>
+                    </div>
+
+                    <!-- Selected Files Preview List -->
+                    <div id="selectedFilesSection" style="display:none;" class="mb-4">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h6 class="fw-bold text-light mb-0">Files to Upload (<span id="fileCount">0</span>)</h6>
+                            <button type="button" class="btn btn-sm btn-outline-danger" onclick="clearSelectedFiles()">
+                                <i class="bi bi-trash me-1"></i>Clear All
+                            </button>
+                        </div>
+                        <div id="fileListContainer" class="mb-3"></div>
+                    </div>
+
+                    <!-- Progress Bar (hidden during idle) -->
+                    <div id="progressSection" style="display:none;" class="mb-4">
+                        <div class="d-flex justify-content-between small text-muted mb-1">
+                            <span id="uploadStatusText">Uploading files to Windows server...</span>
+                            <span id="uploadPercentage">0%</span>
+                        </div>
+                        <div class="progress bg-secondary" style="height: 10px;">
+                            <div class="progress-bar progress-bar-striped progress-bar-animated bg-success" id="uploadProgressBar" style="width: 0%"></div>
+                        </div>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="d-flex justify-content-end gap-2 pt-3 border-top border-secondary">
+                        <a href="{{ url_for('portal.dashboard') }}" class="btn btn-secondary">Cancel</a>
+                        <button type="button" class="btn btn-success px-4" id="uploadBtn" onclick="submitUpload()" disabled>
+                            <i class="bi bi-cloud-upload-fill me-2"></i>Upload to Server
+                        </button>
+                    </div>
+                </form>
+
+                <!-- Results Alert -->
+                <div id="resultsAlert" class="mt-4" style="display:none;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let selectedFiles = [];
+    const dropzone = document.getElementById('dropzone');
+    const fileInput = document.getElementById('fileInput');
+    const selectedFilesSection = document.getElementById('selectedFilesSection');
+    const fileListContainer = document.getElementById('fileListContainer');
+    const fileCount = document.getElementById('fileCount');
+    const uploadBtn = document.getElementById('uploadBtn');
+    const progressSection = document.getElementById('progressSection');
+    const uploadProgressBar = document.getElementById('uploadProgressBar');
+    const uploadPercentage = document.getElementById('uploadPercentage');
+    const uploadStatusText = document.getElementById('uploadStatusText');
+    const resultsAlert = document.getElementById('resultsAlert');
+
+    function formatBytes(bytes) {
+        if (bytes === 0) return '0 B';
+        const k = 1024;
+        const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    // Drag and Drop listeners
+    ['dragenter', 'dragover'].forEach(eventName => {
+        dropzone.addEventListener(eventName, (e) => {
+            e.preventDefault();
+            dropzone.classList.add('dragover');
+        });
+    });
+
+    ['dragleave', 'drop'].forEach(eventName => {
+        dropzone.addEventListener(eventName, (e) => {
+            e.preventDefault();
+            dropzone.classList.remove('dragover');
+        });
+    });
+
+    dropzone.addEventListener('drop', (e) => {
+        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+            handleFiles(e.dataTransfer.files);
+        }
+    });
+
+    fileInput.addEventListener('change', (e) => {
+        if (e.target.files && e.target.files.length > 0) {
+            handleFiles(e.target.files);
+        }
+    });
+
+    function handleFiles(files) {
+        for (let i = 0; i < files.length; i++) {
+            // Avoid exact duplicate references
+            if (!selectedFiles.some(f => f.name === files[i].name && f.size === files[i].size)) {
+                selectedFiles.push(files[i]);
+            }
+        }
+        renderFileList();
+    }
+
+    function removeFile(index) {
+        selectedFiles.splice(index, 1);
+        renderFileList();
+    }
+
+    function clearSelectedFiles() {
+        selectedFiles = [];
+        fileInput.value = '';
+        renderFileList();
+    }
+
+    function renderFileList() {
+        fileCount.textContent = selectedFiles.length;
+        if (selectedFiles.length === 0) {
+            selectedFilesSection.style.display = 'none';
+            uploadBtn.disabled = true;
+            return;
+        }
+
+        selectedFilesSection.style.display = 'block';
+        uploadBtn.disabled = false;
+        fileListContainer.innerHTML = '';
+
+        selectedFiles.forEach((file, idx) => {
+            const card = document.createElement('div');
+            card.className = 'file-item-card';
+            card.innerHTML = `
+                <div class="d-flex align-items-center">
+                    <i class="bi bi-file-earmark-text text-primary fs-4 me-3"></i>
+                    <div>
+                        <div class="file-item-name text-light" title="${file.name}">${file.name}</div>
+                        <div class="small text-muted">${formatBytes(file.size)}</div>
+                    </div>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-danger border-0" onclick="removeFile(${idx})" title="Remove">
+                    <i class="bi bi-x-circle-fill"></i>
+                </button>
+            `;
+            fileListContainer.appendChild(card);
+        });
+    }
+
+    async function submitUpload() {
+        if (selectedFiles.length === 0) return;
+
+        uploadBtn.disabled = true;
+        uploadBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Uploading...';
+        progressSection.style.display = 'block';
+        uploadProgressBar.style.width = '10%';
+        uploadPercentage.textContent = '10%';
+        resultsAlert.style.display = 'none';
+
+        const formData = new FormData();
+        selectedFiles.forEach(file => {
+            formData.append('files', file);
+        });
+
+        try {
+            uploadProgressBar.style.width = '40%';
+            uploadPercentage.textContent = '40%';
+            uploadStatusText.textContent = 'Sending files to Windows share...';
+
+            const response = await fetch("{{ url_for('portal.execute_file_upload', module_id=module.id) }}", {
+                method: 'POST',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: formData
+            });
+
+            uploadProgressBar.style.width = '90%';
+            uploadPercentage.textContent = '90%';
+
+            const data = await response.json();
+
+            if (response.ok && data.success) {
+                uploadProgressBar.style.width = '100%';
+                uploadPercentage.textContent = '100%';
+                uploadStatusText.textContent = 'Upload complete!';
+                
+                let fileListHtml = data.uploaded_files.map(f => `<li><strong>${f.filename}</strong> (${f.size_formatted})</li>`).join('');
+                resultsAlert.className = 'alert alert-success border-success mt-4';
+                resultsAlert.innerHTML = `
+                    <div class="d-flex align-items-center mb-2">
+                        <i class="bi bi-check-circle-fill fs-4 me-2"></i>
+                        <h5 class="alert-heading mb-0">Upload Successful!</h5>
+                    </div>
+                    <p class="mb-2">Successfully uploaded ${data.uploaded_files.length} file(s) to <code>${data.destination_path}</code>:</p>
+                    <ul class="mb-3">${fileListHtml}</ul>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-sm btn-outline-success" onclick="clearSelectedFiles(); progressSection.style.display='none';">
+                            <i class="bi bi-plus-circle me-1"></i>Upload More Files
+                        </button>
+                        <a href="{{ url_for('portal.my_executions') }}" class="btn btn-sm btn-success">
+                            <i class="bi bi-clock-history me-1"></i>View Execution History
+                        </a>
+                    </div>
+                `;
+                resultsAlert.style.display = 'block';
+                selectedFiles = [];
+                renderFileList();
+            } else {
+                throw new Error(data.error || 'Server rejected the upload request');
+            }
+        } catch (err) {
+            uploadProgressBar.className = 'progress-bar bg-danger';
+            uploadStatusText.textContent = 'Upload failed';
+            resultsAlert.className = 'alert alert-danger border-danger mt-4';
+            resultsAlert.innerHTML = `
+                <div class="d-flex align-items-center mb-1">
+                    <i class="bi bi-exclamation-triangle-fill fs-4 me-2"></i>
+                    <h5 class="alert-heading mb-0">Upload Error</h5>
+                </div>
+                <p class="mb-0">${err.message}</p>
+            `;
+            resultsAlert.style.display = 'block';
+        } finally {
+            uploadBtn.disabled = selectedFiles.length === 0;
+            uploadBtn.innerHTML = '<i class="bi bi-cloud-upload-fill me-2"></i>Upload to Server';
+        }
+    }
+</script>
+{% endblock %}

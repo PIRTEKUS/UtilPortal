@@ -198,6 +198,42 @@ def get_databases(conn_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@bp.route('/api/connections/<int:conn_id>/test', methods=['POST'])
+@login_required
+@admin_required
+def test_connection(conn_id):
+    conn = ServerConnection.query.get_or_404(conn_id)
+    if conn.server_type == 'windows_share':
+        from services.smb_service import test_smb_connection
+        success, msg = test_smb_connection(conn)
+        status_code = 200 if success else 400
+        return jsonify({'success': success, 'message': msg}), status_code
+    elif conn.server_type == 'sqlserver':
+        try:
+            conn_str = f"DRIVER={{ODBC Driver 18 for SQL Server}};SERVER={conn.host};UID={conn.username};PWD={conn.password};Encrypt=no;TrustServerCertificate=yes;PacketSize=1024;KeepAlive=30;KeepAliveInterval=1;Connection Timeout=10;"
+            odbc_conn = pyodbc.connect(conn_str, autocommit=True)
+            cursor = odbc_conn.cursor()
+            cursor.execute("SELECT @@VERSION")
+            ver = cursor.fetchone()[0]
+            cursor.close()
+            odbc_conn.close()
+            return jsonify({'success': True, 'message': f"Connected to SQL Server: {ver[:60]}..."})
+        except Exception as e:
+            return jsonify({'success': False, 'message': str(e)}), 400
+    elif conn.server_type == 'mysql':
+        try:
+            import pymysql
+            m_conn = pymysql.connect(host=conn.host, user=conn.username, password=conn.password, connect_timeout=10)
+            cur = m_conn.cursor()
+            cur.execute("SELECT VERSION()")
+            ver = cur.fetchone()[0]
+            cur.close()
+            m_conn.close()
+            return jsonify({'success': True, 'message': f"Connected to MySQL: {ver}"})
+        except Exception as e:
+            return jsonify({'success': False, 'message': str(e)}), 400
+    return jsonify({'success': False, 'message': f'Unsupported connection type: {conn.server_type}'}), 400
+
 # --- ROLES ---
 @bp.route('/roles', methods=['GET', 'POST'])
 @login_required
@@ -435,6 +471,7 @@ def create_module():
         
     if mod_type == 'custom':
         new_module.custom_code = request.form.get('custom_code')
+        new_module.object_type = None
         # Handle zip upload
         if 'zip_file' in request.files and request.files['zip_file'].filename:
             file = request.files['zip_file']
@@ -455,9 +492,23 @@ def create_module():
             os.remove(zip_path)
             flash(f'Module "{new_module.name}" created from ZIP successfully.', 'success')
             return redirect(url_for('admin.modules'))
+    elif mod_type == 'file_upload':
+        new_module.object_type = 'file_upload'
+        conn_id = request.form.get('upload_connection_id')
+        new_module.connection_id = int(conn_id) if conn_id else None
+        new_module.destination_filepath = request.form.get('upload_destination_filepath')
+    elif mod_type == 'file_mover':
+        new_module.object_type = 'file_mover'
+        orig_conn = request.form.get('mover_origin_connection_id')
+        dest_conn = request.form.get('mover_destination_connection_id')
+        new_module.connection_id = int(orig_conn) if orig_conn else None
+        new_module.destination_connection_id = int(dest_conn) if dest_conn else None
+        new_module.origin_filepath = request.form.get('mover_origin_filepath')
+        new_module.destination_filepath = request.form.get('mover_destination_filepath')
+        new_module.file_pattern = request.form.get('mover_file_pattern') or '*.*'
     else:
-        new_module.connection_id = request.form.get('connection_id')
-        new_module.object_type = request.form.get('object_type')
+        new_module.connection_id = request.form.get('connection_id') or None
+        new_module.object_type = request.form.get('object_type') or 'sp'
         new_module.database_name = request.form.get('database_name')
         new_module.stored_proc_name = request.form.get('stored_proc_name')
 
@@ -516,14 +567,44 @@ def edit_module(module_id):
             os.remove(zip_path)
             
         module.connection_id = None
+        module.destination_connection_id = None
+        module.origin_filepath = None
+        module.destination_filepath = None
         module.object_type = None
         module.database_name = None
         module.stored_proc_name = None
+    elif mod_type == 'file_upload':
+        module.object_type = 'file_upload'
+        conn_id = request.form.get('upload_connection_id')
+        module.connection_id = int(conn_id) if conn_id else None
+        module.destination_filepath = request.form.get('upload_destination_filepath')
+        module.destination_connection_id = None
+        module.origin_filepath = None
+        module.database_name = None
+        module.stored_proc_name = None
+        module.custom_code = None
+        module.is_python_folder = False
+    elif mod_type == 'file_mover':
+        module.object_type = 'file_mover'
+        orig_conn = request.form.get('mover_origin_connection_id')
+        dest_conn = request.form.get('mover_destination_connection_id')
+        module.connection_id = int(orig_conn) if orig_conn else None
+        module.destination_connection_id = int(dest_conn) if dest_conn else None
+        module.origin_filepath = request.form.get('mover_origin_filepath')
+        module.destination_filepath = request.form.get('mover_destination_filepath')
+        module.file_pattern = request.form.get('mover_file_pattern') or '*.*'
+        module.database_name = None
+        module.stored_proc_name = None
+        module.custom_code = None
+        module.is_python_folder = False
     else:
         module.connection_id = request.form.get('connection_id') or None
-        module.object_type = request.form.get('object_type')
+        module.object_type = request.form.get('object_type') or 'sp'
         module.database_name = request.form.get('database_name')
         module.stored_proc_name = request.form.get('stored_proc_name')
+        module.destination_connection_id = None
+        module.origin_filepath = None
+        module.destination_filepath = None
         module.custom_code = None
         module.is_python_folder = False
         

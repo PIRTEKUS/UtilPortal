@@ -25,6 +25,10 @@ with app.app_context():
         "ALTER TABLE audit_log ADD COLUMN notified BOOLEAN DEFAULT 0",
         "ALTER TABLE folder ADD COLUMN display_order INT NOT NULL DEFAULT 0",
         "ALTER TABLE module ADD COLUMN display_order INT NOT NULL DEFAULT 0",
+        "ALTER TABLE module ADD COLUMN destination_connection_id INT",
+        "ALTER TABLE module ADD COLUMN origin_filepath VARCHAR(500)",
+        "ALTER TABLE module ADD COLUMN destination_filepath VARCHAR(500)",
+        "ALTER TABLE module ADD COLUMN file_pattern VARCHAR(100) DEFAULT '*.*'",
     ]
 
     for cmd in columns_to_add:

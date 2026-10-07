@@ -41,6 +41,8 @@
                                 <td>
                                     {% if conn.server_type == 'sqlserver' %}
                                     <span class="badge bg-primary"><i class="bi bi-microsoft me-1"></i> SQL Server</span>
+                                    {% elif conn.server_type == 'windows_share' %}
+                                    <span class="badge bg-warning text-dark"><i class="bi bi-folder-symlink me-1"></i> Windows Server</span>
                                     {% else %}
                                     <span class="badge bg-info text-dark"><i class="bi bi-database me-1"></i> MySQL</span>
                                     {% endif %}
@@ -49,6 +51,10 @@
                                 <td>{{ conn.username }}</td>
                                 <td>{{ conn.modules|length }}</td>
                                 <td class="text-end">
+                                    <button type="button" class="btn btn-sm btn-outline-warning me-1"
+                                        onclick="testConnection({{ conn.id }}, this)">
+                                        <i class="bi bi-broadcast me-1"></i>Test
+                                    </button>
                                     <button class="btn btn-sm btn-outline-info"
                                         data-bs-toggle="modal"
                                         data-bs-target="#editConnectionModal{{ conn.id }}">
@@ -78,6 +84,10 @@
                                                 <div class="mb-3">
                                                     <label class="form-label">Server Type *</label>
                                                     <select name="server_type" class="form-select" required>
+                                                        <option value="windows_share"
+                                                            {% if conn.server_type == 'windows_share' %}selected{% endif %}>
+                                                            Windows File Server (SMB / Share)
+                                                        </option>
                                                         <option value="sqlserver"
                                                             {% if conn.server_type == 'sqlserver' %}selected{% endif %}>
                                                             Microsoft SQL Server
@@ -91,12 +101,13 @@
                                                 <div class="mb-3">
                                                     <label class="form-label">Host / IP Address *</label>
                                                     <input type="text" name="host" class="form-control"
-                                                        value="{{ conn.host }}" required>
+                                                        value="{{ conn.host }}" required placeholder="e.g. 10.1.2.3 or FILESERVER1">
                                                 </div>
                                                 <div class="mb-3">
                                                     <label class="form-label">Username *</label>
                                                     <input type="text" name="username" class="form-control"
                                                         value="{{ conn.username }}" required>
+                                                    <small class="text-muted d-block mt-1">For Windows / Active Directory, use <code>DOMAIN\username</code> or <code>user@domain</code>.</small>
                                                 </div>
                                                 <div class="mb-3">
                                                     <label class="form-label">Password</label>
@@ -141,26 +152,28 @@
                 <div class="modal-body text-light">
                     <div class="mb-3">
                         <label class="form-label">Connection Name *</label>
-                        <input type="text" name="name" class="form-control" required placeholder="e.g. Prod DB">
+                        <input type="text" name="name" class="form-control" required placeholder="e.g. FILESERVER1 or Prod DB">
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Server Type *</label>
                         <select name="server_type" class="form-select" required>
+                            <option value="windows_share">Windows File Server (SMB / Share)</option>
                             <option value="sqlserver">Microsoft SQL Server</option>
                             <option value="mysql">MySQL</option>
                         </select>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Host / IP Address *</label>
-                        <input type="text" name="host" class="form-control" required placeholder="10.1.1.5">
+                        <input type="text" name="host" class="form-control" required placeholder="e.g. 10.1.2.3 or FILESERVER1">
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Username *</label>
-                        <input type="text" name="username" class="form-control" required>
+                        <input type="text" name="username" class="form-control" required placeholder="e.g. domain123\user456">
+                        <small class="text-muted d-block mt-1">For Windows / Active Directory, use <code>DOMAIN\username</code> or <code>user@domain</code>.</small>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Password *</label>
-                        <input type="password" name="password" class="form-control" required>
+                        <input type="password" name="password" class="form-control" required placeholder="Password">
                     </div>
                 </div>
                 <div class="modal-footer border-secondary">
@@ -171,4 +184,34 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function testConnection(connId, btn) {
+    const originalHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Testing...';
+
+    try {
+        const response = await fetch(`/admin/api/connections/${connId}/test`, {
+            method: 'POST',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        });
+        const data = await response.json();
+        if (response.ok && data.success) {
+            alert('✓ Success: ' + data.message);
+        } else {
+            alert('✗ Connection Failed: ' + (data.message || 'Unknown error'));
+        }
+    } catch (err) {
+        alert('✗ Error testing connection: ' + err.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalHtml;
+    }
+}
+</script>
 {% endblock %}

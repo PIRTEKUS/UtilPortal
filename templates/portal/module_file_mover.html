@@ -1,0 +1,365 @@
+{% extends "base.html" %}
+{% block title %}{{ module.name }} — File Mover{% endblock %}
+
+{% block content %}
+<style>
+    .mover-route-card {
+        background: linear-gradient(135deg, rgba(13, 110, 253, 0.08), rgba(25, 135, 84, 0.08));
+        border: 1px solid #495057;
+        border-radius: 10px;
+        padding: 16px 20px;
+    }
+    .mover-route-arrow {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #0dcaf0;
+        font-size: 1.8rem;
+    }
+    .table-files tbody tr:hover {
+        background-color: rgba(255, 255, 255, 0.05);
+        cursor: pointer;
+    }
+    .table-files .form-check-input {
+        cursor: pointer;
+    }
+</style>
+
+<div class="row justify-content-center">
+    <div class="col-lg-10 col-md-12">
+        <div class="card shadow border-primary mb-4 bg-dark text-light">
+            <div class="card-header bg-dark border-secondary">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h4 class="mb-0 text-primary">
+                        <i class="bi bi-arrow-left-right me-2"></i>{{ module.name }}
+                    </h4>
+                    <a href="{{ url_for('portal.dashboard') }}" class="btn btn-sm btn-outline-secondary">
+                        <i class="bi bi-arrow-left me-1"></i>Back to Dashboard
+                    </a>
+                </div>
+            </div>
+            <div class="card-body">
+                {% if module.description %}
+                <p class="text-muted border-bottom border-secondary pb-3 mb-3">{{ module.description }}</p>
+                {% endif %}
+
+                <!-- Route Summary (Origin -> Destination) -->
+                <div class="mover-route-card mb-4">
+                    <div class="row align-items-center">
+                        <div class="col-md-5 mb-2 mb-md-0">
+                            <div class="text-uppercase small text-muted fw-bold mb-1">
+                                <i class="bi bi-box-arrow-up-right me-1 text-warning"></i>Source (Origin)
+                            </div>
+                            <div class="fw-bold text-info">
+                                {{ origin_connection.name if origin_connection else 'Default Server' }}
+                            </div>
+                            <code class="text-light small font-monospace d-block text-truncate" title="{{ module.origin_filepath }}">
+                                {{ module.origin_filepath or '\\' }}
+                            </code>
+                        </div>
+                        <div class="col-md-2 text-center mover-route-arrow my-2 my-md-0">
+                            <i class="bi bi-arrow-right-circle-fill"></i>
+                        </div>
+                        <div class="col-md-5">
+                            <div class="text-uppercase small text-muted fw-bold mb-1">
+                                <i class="bi bi-box-arrow-in-down-left me-1 text-success"></i>Target (Destination)
+                            </div>
+                            <div class="fw-bold text-success">
+                                {{ destination_connection.name if destination_connection else (origin_connection.name if origin_connection else 'Default Server') }}
+                            </div>
+                            <code class="text-light small font-monospace d-block text-truncate" title="{{ module.destination_filepath }}">
+                                {{ module.destination_filepath or '\\' }}
+                            </code>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Controls & Filter Toolbar -->
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+                    <div class="d-flex align-items-center gap-2 flex-grow-1" style="max-width: 400px;">
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-text bg-dark border-secondary text-muted"><i class="bi bi-search"></i></span>
+                            <input type="text" id="fileFilterInput" class="form-control bg-dark text-light border-secondary" placeholder="Filter files in list..." onkeyup="filterFiles()">
+                        </div>
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="loadFiles()" id="refreshBtn">
+                            <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+                        </button>
+                        <button type="button" class="btn btn-sm btn-primary px-3" id="moveBtn" onclick="confirmMove()" disabled>
+                            <i class="bi bi-arrow-right me-1"></i>Move Selected (<span id="selectedCount">0</span>)
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Results & Status Alert -->
+                <div id="statusAlert" style="display:none;" class="mb-3"></div>
+
+                <!-- Files Table -->
+                <div class="table-responsive rounded border border-secondary mb-3" style="max-height: 480px; overflow-y: auto;">
+                    <table class="table table-dark table-hover table-files mb-0 align-middle">
+                        <thead class="table-secondary sticky-top border-secondary">
+                            <tr>
+                                <th style="width: 40px;" class="text-center">
+                                    <input type="checkbox" id="selectAllCheckbox" class="form-check-input" onchange="toggleSelectAll(this)">
+                                </th>
+                                <th>File Name</th>
+                                <th style="width: 130px;">Size</th>
+                                <th style="width: 180px;">Last Modified</th>
+                            </tr>
+                        </thead>
+                        <tbody id="filesTableBody">
+                            <tr>
+                                <td colspan="4" class="text-center py-4 text-muted">
+                                    <span class="spinner-border spinner-border-sm me-2"></span>Loading files from Windows share...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="d-flex justify-content-between align-items-center small text-muted">
+                    <div>Showing <span id="visibleFileCount">0</span> file(s)</div>
+                    <div>Pattern Filter: <code>{{ module.file_pattern or '*.*' }}</code></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Move Confirmation Modal -->
+<div class="modal fade" id="confirmMoveModal" tabindex="-1" aria-hidden="true" data-bs-theme="dark">
+    <div class="modal-dialog">
+        <div class="modal-content bg-dark">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title text-warning"><i class="bi bi-exclamation-triangle me-2"></i>Confirm File Transfer</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body text-light">
+                <p>Are you sure you want to move <strong id="modalFileCount" class="text-info">0</strong> selected file(s)?</p>
+                <div class="alert alert-secondary bg-dark border-secondary small mb-3">
+                    <div class="mb-1"><strong>From:</strong> <code>{{ module.origin_filepath }}</code></div>
+                    <div><strong>To:</strong> <code>{{ module.destination_filepath }}</code></div>
+                </div>
+                <div class="small text-muted mb-0">Files will be moved and removed from the source folder upon successful transfer.</div>
+            </div>
+            <div class="modal-footer border-secondary">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="modalExecuteBtn" onclick="executeMove()">
+                    <i class="bi bi-arrow-right-circle me-1"></i>Yes, Move Files
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let filesData = [];
+    let selectedFilenames = new Set();
+    const filesTableBody = document.getElementById('filesTableBody');
+    const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+    const moveBtn = document.getElementById('moveBtn');
+    const selectedCountSpan = document.getElementById('selectedCount');
+    const visibleFileCount = document.getElementById('visibleFileCount');
+    const statusAlert = document.getElementById('statusAlert');
+    const fileFilterInput = document.getElementById('fileFilterInput');
+    const refreshBtn = document.getElementById('refreshBtn');
+    const confirmMoveModalEl = document.getElementById('confirmMoveModal');
+    const confirmMoveModal = new bootstrap.Modal(confirmMoveModalEl);
+
+    document.addEventListener('DOMContentLoaded', () => {
+        loadFiles();
+    });
+
+    async function loadFiles() {
+        refreshBtn.disabled = true;
+        refreshBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Loading...';
+        filesTableBody.innerHTML = `
+            <tr>
+                <td colspan="4" class="text-center py-4 text-muted">
+                    <span class="spinner-border spinner-border-sm me-2"></span>Loading files from Windows share...
+                </td>
+            </tr>
+        `;
+        selectedFilenames.clear();
+        updateSelectionUI();
+
+        try {
+            const response = await fetch("{{ url_for('portal.api_module_files', module_id=module.id) }}");
+            const data = await response.json();
+
+            if (response.ok && data.success) {
+                filesData = data.files.filter(f => !f.is_dir); // only regular files
+                renderTable(filesData);
+            } else {
+                throw new Error(data.error || 'Could not list files from Windows share');
+            }
+        } catch (err) {
+            filesTableBody.innerHTML = `
+                <tr>
+                    <td colspan="4" class="text-center py-4 text-danger">
+                        <i class="bi bi-exclamation-circle me-2"></i>Error: ${err.message}
+                    </td>
+                </tr>
+            `;
+            visibleFileCount.textContent = '0';
+        } finally {
+            refreshBtn.disabled = false;
+            refreshBtn.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>Refresh';
+        }
+    }
+
+    function renderTable(files) {
+        if (!files || files.length === 0) {
+            filesTableBody.innerHTML = `
+                <tr>
+                    <td colspan="4" class="text-center py-4 text-muted">
+                        <i class="bi bi-folder2-open me-2"></i>No matching files found in origin folder.
+                    </td>
+                </tr>
+            `;
+            visibleFileCount.textContent = '0';
+            return;
+        }
+
+        filesTableBody.innerHTML = '';
+        files.forEach((file) => {
+            const isChecked = selectedFilenames.has(file.name);
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="text-center" onclick="event.stopPropagation()">
+                    <input type="checkbox" class="form-check-input file-checkbox" value="${file.name}" ${isChecked ? 'checked' : ''} onchange="onFileCheckboxChange(this)">
+                </td>
+                <td onclick="toggleRowCheckbox(this)">
+                    <i class="bi bi-file-earmark-text text-info me-2"></i><span class="file-name">${file.name}</span>
+                </td>
+                <td class="text-muted font-monospace small" onclick="toggleRowCheckbox(this)">${file.size_formatted}</td>
+                <td class="text-muted small" onclick="toggleRowCheckbox(this)">${file.modified}</td>
+            `;
+            filesTableBody.appendChild(tr);
+        });
+
+        visibleFileCount.textContent = files.length;
+        updateSelectionUI();
+    }
+
+    function toggleRowCheckbox(tdElement) {
+        const tr = tdElement.closest('tr');
+        const cb = tr.querySelector('.file-checkbox');
+        cb.checked = !cb.checked;
+        onFileCheckboxChange(cb);
+    }
+
+    function onFileCheckboxChange(checkbox) {
+        if (checkbox.checked) {
+            selectedFilenames.add(checkbox.value);
+        } else {
+            selectedFilenames.delete(checkbox.value);
+        }
+        updateSelectionUI();
+    }
+
+    function toggleSelectAll(selectAllCb) {
+        const checkboxes = filesTableBody.querySelectorAll('.file-checkbox');
+        checkboxes.forEach(cb => {
+            cb.checked = selectAllCb.checked;
+            if (selectAllCb.checked) {
+                selectedFilenames.add(cb.value);
+            } else {
+                selectedFilenames.delete(cb.value);
+            }
+        });
+        updateSelectionUI();
+    }
+
+    function updateSelectionUI() {
+        const count = selectedFilenames.size;
+        selectedCountSpan.textContent = count;
+        moveBtn.disabled = count === 0;
+
+        const allCheckboxes = filesTableBody.querySelectorAll('.file-checkbox');
+        if (allCheckboxes.length > 0 && count === allCheckboxes.length) {
+            selectAllCheckbox.checked = true;
+            selectAllCheckbox.indeterminate = false;
+        } else if (count > 0 && count < allCheckboxes.length) {
+            selectAllCheckbox.checked = false;
+            selectAllCheckbox.indeterminate = true;
+        } else {
+            selectAllCheckbox.checked = false;
+            selectAllCheckbox.indeterminate = false;
+        }
+    }
+
+    function filterFiles() {
+        const term = fileFilterInput.value.toLowerCase().trim();
+        if (!term) {
+            renderTable(filesData);
+            return;
+        }
+        const filtered = filesData.filter(f => f.name.toLowerCase().includes(term));
+        renderTable(filtered);
+    }
+
+    function confirmMove() {
+        if (selectedFilenames.size === 0) return;
+        document.getElementById('modalFileCount').textContent = selectedFilenames.size;
+        confirmMoveModal.show();
+    }
+
+    async function executeMove() {
+        const executeBtn = document.getElementById('modalExecuteBtn');
+        executeBtn.disabled = true;
+        executeBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Moving...';
+
+        try {
+            const response = await fetch("{{ url_for('portal.execute_file_mover', module_id=module.id) }}", {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: JSON.stringify({
+                    filenames: Array.from(selectedFilenames)
+                })
+            });
+
+            const data = await response.json();
+            confirmMoveModal.hide();
+
+            if (response.ok && data.success) {
+                statusAlert.className = 'alert alert-success border-success';
+                statusAlert.innerHTML = `
+                    <div class="d-flex align-items-center">
+                        <i class="bi bi-check-circle-fill fs-5 me-2"></i>
+                        <div>
+                            <strong>Successfully moved ${data.moved_count} file(s)!</strong>
+                            <div class="small text-muted mt-1">Transferred to <code>${data.destination_path}</code>.</div>
+                        </div>
+                    </div>
+                `;
+                statusAlert.style.display = 'block';
+                loadFiles();
+            } else {
+                throw new Error(data.error || 'File transfer failed');
+            }
+        } catch (err) {
+            confirmMoveModal.hide();
+            statusAlert.className = 'alert alert-danger border-danger';
+            statusAlert.innerHTML = `
+                <div class="d-flex align-items-center">
+                    <i class="bi bi-exclamation-triangle-fill fs-5 me-2"></i>
+                    <div>
+                        <strong>Transfer Error:</strong> ${err.message}
+                    </div>
+                </div>
+            `;
+            statusAlert.style.display = 'block';
+        } finally {
+            executeBtn.disabled = false;
+            executeBtn.innerHTML = '<i class="bi bi-arrow-right-circle me-1"></i>Yes, Move Files';
+        }
+    }
+</script>
+{% endblock %}
