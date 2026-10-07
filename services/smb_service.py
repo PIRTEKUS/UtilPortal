@@ -65,18 +65,23 @@ def test_smb_connection(conn):
     Returns (success: bool, message: str).
     """
     try:
-        register_smb_session(conn, timeout=10)
-        root_path = fr"\\{conn.host}"
-        # Attempt to list root shares/directory to verify credentials
-        try:
-            entries = smbclient.listdir(root_path)
-            shares_str = ", ".join(entries[:6])
-            if len(entries) > 6:
-                shares_str += f" (+{len(entries)-6} more)"
-            return True, f"Successfully connected to {conn.host}. Available shares: [{shares_str}]"
-        except Exception:
-            # If root listing is restricted, connection handshake still succeeded
-            return True, f"Successfully connected and authenticated to {conn.host}."
+        session = register_smb_session(conn, timeout=10)
+        # Probe common shares to verify tree connection capability
+        candidates = ['C$', 'D$', 'E$', 'Shared', 'Share', 'Shares', 'Data', 'Users', 'Public', 'Uploads', 'Files']
+        from smbprotocol.tree import TreeConnect
+        found_shares = []
+        for s in candidates:
+            try:
+                tree = TreeConnect(session, fr"\\{conn.host}\{s}")
+                tree.connect()
+                found_shares.append(s)
+            except Exception:
+                pass
+        
+        if found_shares:
+            shares_str = ", ".join(found_shares[:6])
+            return True, f"Successfully connected and authenticated to {conn.host}. Available shares: [{shares_str}]"
+        return True, f"Successfully connected and authenticated to {conn.host}."
     except Exception as e:
         err = str(e)
         if 'timed out' in err.lower():
@@ -92,24 +97,44 @@ def browse_smb_folders(conn, raw_path=""):
     If raw_path is a share or subfolder (\\\\host\\Share\\SubFolder or Share\\SubFolder):
       Returns list of subdirectories inside that folder.
     """
-    register_smb_session(conn)
+    session = register_smb_session(conn, timeout=10)
     raw_path = (raw_path or "").strip().replace('/', '\\')
     
-    if not raw_path or raw_path.strip('\\') == '' or raw_path.lower() == fr"\\{conn.host}".lower():
-        # Root level: list shares
+    clean_parts = [p for p in raw_path.split('\\') if p]
+    
+    # Check if we are at the root level (no share specified)
+    is_root = False
+    if not clean_parts:
+        is_root = True
+    elif len(clean_parts) == 1 and clean_parts[0].lower() == conn.host.lower():
+        is_root = True
+
+    if is_root:
         current_path = fr"\\{conn.host}"
         folders = []
-        try:
-            share_names = smbclient.listdir(current_path)
-            for name in sorted(share_names, key=lambda x: x.lower()):
+        
+        candidates = [
+            'C$', 'D$', 'E$', 'Shared', 'Share', 'Shares', 'Data', 'Users', 
+            'Public', 'Uploads', 'Incoming', 'Archive', 'Files', 'Backups', 
+            'IT', 'Logs', 'Apps', 'Transfer', 'Temp', 'Software', 'Reports',
+            'Documents', 'Media', 'Storage', 'Export', 'Import'
+        ]
+        from smbprotocol.tree import TreeConnect
+        
+        for share_name in candidates:
+            try:
+                tree = TreeConnect(session, fr"\\{conn.host}\{share_name}")
+                tree.connect()
                 folders.append({
-                    'name': name,
-                    'path': fr"\\{conn.host}\{name}",
+                    'name': share_name,
+                    'path': fr"\\{conn.host}\{share_name}",
                     'is_share': True
                 })
-        except Exception as e:
-            raise RuntimeError(f"Could not list shares on {conn.host}: {str(e)}")
-            
+            except Exception:
+                pass
+                
+        folders.sort(key=lambda x: (not x['name'].endswith('$'), x['name'].lower()))
+        
         return {
             'server_name': conn.name,
             'server_host': conn.host,
@@ -119,12 +144,12 @@ def browse_smb_folders(conn, raw_path=""):
             'folders': folders
         }
     else:
-        # Subfolder level
+        # Subfolder or specific Share level
         unc_path = normalize_unc_path(conn.host, raw_path)
-        if not smbclient.path.exists(unc_path):
-            raise FileNotFoundError(f"Path not found on {conn.host}: {unc_path}")
-            
         parts = [p for p in unc_path.split('\\') if p]
+        
+        share_name = parts[1] if len(parts) > 1 else ""
+        
         if len(parts) <= 2:
             parent_path = fr"\\{conn.host}"
         else:
@@ -140,8 +165,14 @@ def browse_smb_folders(conn, raw_path=""):
                         'is_share': False
                     })
         except Exception as e:
-            raise RuntimeError(f"Could not open directory {unc_path}: {str(e)}")
-            
+            err_msg = str(e)
+            if '0xc00000cc' in err_msg or 'STATUS_BAD_NETWORK_NAME' in err_msg:
+                raise RuntimeError(f"Share '{share_name}' was not found on server {conn.host}. Please verify the Windows share name or try typing the exact share name.")
+            elif '0xc0000022' in err_msg or 'STATUS_ACCESS_DENIED' in err_msg:
+                raise RuntimeError(f"Access denied to '{unc_path}'. User '{conn.username}' does not have permission to access this share/folder.")
+            else:
+                raise RuntimeError(f"Could not open directory {unc_path}: {err_msg}")
+                
         folders.sort(key=lambda x: x['name'].lower())
         return {
             'server_name': conn.name,

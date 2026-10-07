@@ -525,8 +525,17 @@
                     </div>
                 </div>
 
+                <!-- Direct Share / Path Jump Input -->
+                <div class="input-group mb-3">
+                    <span class="input-group-text bg-dark border-secondary text-warning font-monospace small" id="folderPickerHostPrefix">\\server\</span>
+                    <input type="text" id="folderPickerDirectInput" class="form-control font-monospace" placeholder="Enter share name (e.g. SharedFolder or C$)..." onkeydown="if(event.key==='Enter'){event.preventDefault();folderPickerGoDirect();}">
+                    <button type="button" class="btn btn-outline-info" onclick="folderPickerGoDirect()">
+                        <i class="bi bi-box-arrow-in-right me-1"></i>Open Share
+                    </button>
+                </div>
+
                 <!-- Folder List Container -->
-                <div id="folderPickerList" class="list-group list-group-flush border border-secondary rounded" style="max-height: 350px; overflow-y: auto;">
+                <div id="folderPickerList" class="list-group list-group-flush border border-secondary rounded" style="max-height: 320px; overflow-y: auto;">
                     <!-- Dynamically populated folder items -->
                 </div>
 
@@ -534,7 +543,7 @@
                 <div id="folderPickerStatus" class="text-center text-muted py-3 d-none"></div>
             </div>
             <div class="modal-footer border-secondary justify-content-between">
-                <div class="small text-muted" id="folderPickerHint">Click a folder to navigate into it, or click "Select Current Folder" to choose it.</div>
+                <div class="small text-muted" id="folderPickerHint">Click a folder to navigate, or enter a share name above.</div>
                 <div>
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                     <button type="button" class="btn btn-success" id="folderPickerSelectBtn" onclick="confirmFolderSelection()">
@@ -662,14 +671,20 @@
         const pathElem = document.getElementById('folderPickerCurrentPath');
         const statusElem = document.getElementById('folderPickerStatus');
         const backBtn = document.getElementById('folderPickerBackBtn');
+        const hostPrefixElem = document.getElementById('folderPickerHostPrefix');
+        const directInputElem = document.getElementById('folderPickerDirectInput');
 
-        listElem.innerHTML = '<div class="p-3 text-center text-muted"><span class="spinner-border spinner-border-sm me-2"></span>Loading folders...</div>';
+        listElem.innerHTML = '<div class="p-3 text-center text-muted"><span class="spinner-border spinner-border-sm me-2"></span>Connecting & reading folders...</div>';
         statusElem.classList.add('d-none');
-        pathElem.textContent = 'Connecting & querying server...';
+        pathElem.textContent = 'Querying server...';
 
         try {
             const res = await fetch(`/admin/api/connections/${connId}/browse-folders?path=${encodeURIComponent(path)}`);
             const data = await res.json();
+
+            if (data.server_host && hostPrefixElem) {
+                hostPrefixElem.textContent = `\\\\${data.server_host}\\`;
+            }
 
             if (!res.ok || !data.success) {
                 listElem.innerHTML = '';
@@ -693,7 +708,11 @@
             listElem.innerHTML = '';
             if (!data.folders || data.folders.length === 0) {
                 statusElem.className = 'text-center text-muted py-3';
-                statusElem.innerHTML = '<i class="bi bi-folder-x me-1"></i> No subdirectories or shares found in this folder.';
+                if (data.is_root) {
+                    statusElem.innerHTML = '<i class="bi bi-info-circle me-1"></i> No standard shares detected automatically. Please type your Windows Share Name above and click <strong>Open Share</strong>.';
+                } else {
+                    statusElem.innerHTML = '<i class="bi bi-folder-x me-1"></i> No subdirectories found in this folder.';
+                }
                 statusElem.classList.remove('d-none');
             } else {
                 statusElem.classList.add('d-none');
@@ -729,6 +748,16 @@
             statusElem.innerHTML = `<i class="bi bi-exclamation-triangle-fill me-1"></i> ${escapeHtml(err.message)}`;
             statusElem.classList.remove('d-none');
         }
+    }
+
+    function folderPickerGoDirect() {
+        const input = document.getElementById('folderPickerDirectInput');
+        const val = (input ? input.value : '').trim();
+        if (!val) {
+            alert('Please enter a share name or folder path.');
+            return;
+        }
+        loadFolderDirectory(currentPickerConnId, val);
     }
 
     function folderPickerGoUp() {
