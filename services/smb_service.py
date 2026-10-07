@@ -46,17 +46,16 @@ def normalize_unc_path(host, raw_path):
     return fr"\\{host}\{clean_p}"
 
 
-def register_smb_session(conn, port=445):
+def register_smb_session(conn, port=445, timeout=15):
     """
     Register or update an authenticated SMB session with smbclient.
     """
-    domain, user = parse_smb_auth(conn.username)
     smbclient.register_session(
         server=conn.host,
-        username=user,
+        username=conn.username,
         password=conn.password,
-        domain=domain,
-        port=port
+        port=port,
+        connection_timeout=timeout
     )
 
 

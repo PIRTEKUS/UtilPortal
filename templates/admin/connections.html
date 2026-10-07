@@ -76,6 +76,7 @@
                                         <form action="{{ url_for('admin.edit_connection', conn_id=conn.id) }}"
                                             method="post">
                                             <div class="modal-body text-light">
+                                                <div id="editConnAlert{{ conn.id }}" class="alert d-none mb-3" role="alert"></div>
                                                 <div class="mb-3">
                                                     <label class="form-label">Connection Name *</label>
                                                     <input type="text" name="name" class="form-control"
@@ -114,7 +115,6 @@
                                                     <input type="password" name="password" class="form-control"
                                                         placeholder="Leave blank to keep current password">
                                                 </div>
-                                                <div id="editConnAlert{{ conn.id }}" class="alert d-none mb-0" role="alert"></div>
                                             </div>
                                             <div class="modal-footer border-secondary justify-content-between">
                                                 <button type="button" class="btn btn-outline-warning"
@@ -157,6 +157,7 @@
             </div>
             <form action="{{ url_for('admin.create_connection') }}" method="post">
                 <div class="modal-body text-light">
+                    <div id="createConnAlert" class="alert d-none mb-3" role="alert"></div>
                     <div class="mb-3">
                         <label class="form-label">Connection Name *</label>
                         <input type="text" name="name" class="form-control" required placeholder="e.g. FILESERVER1 or Prod DB">
@@ -182,7 +183,6 @@
                         <label class="form-label">Password *</label>
                         <input type="password" name="password" class="form-control" required placeholder="Password">
                     </div>
-                    <div id="createConnAlert" class="alert d-none mb-0" role="alert"></div>
                 </div>
                 <div class="modal-footer border-secondary justify-content-between">
                     <button type="button" class="btn btn-outline-warning" onclick="testModalCredentials('create', null, this)">
@@ -203,9 +203,10 @@
 <script>
 function showAlert(elem, type, message) {
     if (!elem) return;
-    elem.className = `alert alert-${type} mt-3 mb-0`;
+    elem.className = `alert alert-${type} mb-3`;
     elem.innerHTML = message;
     elem.classList.remove('d-none');
+    elem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 async function testModalCredentials(mode, connId = null, btn = null) {
@@ -260,6 +261,7 @@ async function testModalCredentials(mode, connId = null, btn = null) {
             showAlert(alertBox, 'danger', `<strong><i class="bi bi-x-circle-fill me-1"></i> Connection Failed:</strong> ${data.message || 'Unknown error'}`);
         }
     } catch (err) {
+        console.error('Connection test error:', err);
         showAlert(alertBox, 'danger', `<strong><i class="bi bi-x-circle-fill me-1"></i> Connection Failed:</strong> ${err.message}`);
     } finally {
         if (btn) {
