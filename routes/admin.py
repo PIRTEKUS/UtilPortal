@@ -249,9 +249,13 @@ def test_custom_connection():
     conn_id = data.get('conn_id')
 
     if conn_id and not password:
-        existing_conn = ServerConnection.query.get(conn_id)
-        if existing_conn:
-            password = existing_conn.password
+        try:
+            conn_id_int = int(conn_id)
+            existing_conn = ServerConnection.query.get(conn_id_int)
+            if existing_conn:
+                password = existing_conn.password
+        except Exception:
+            pass
 
     success, msg = _execute_connection_test(server_type, host, username, password)
     status_code = 200 if success else 400

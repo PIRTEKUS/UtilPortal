@@ -65,7 +65,7 @@ def test_smb_connection(conn):
     Returns (success: bool, message: str).
     """
     try:
-        register_smb_session(conn)
+        register_smb_session(conn, timeout=10)
         root_path = fr"\\{conn.host}"
         # Attempt to list root shares/directory to verify credentials
         try:
@@ -78,7 +78,10 @@ def test_smb_connection(conn):
             # If root listing is restricted, connection handshake still succeeded
             return True, f"Successfully connected and authenticated to {conn.host}."
     except Exception as e:
-        return False, f"SMB Connection Error: {str(e)}"
+        err = str(e)
+        if 'timed out' in err.lower():
+            return False, f"SMB Connection Error: Failed to connect to '{conn.host}:445' (timed out). Please verify that port 445 is reachable from this server and that Windows Firewall allows inbound SMB connections."
+        return False, f"SMB Connection Error: {err}"
 
 
 def browse_smb_folders(conn, raw_path=""):

@@ -227,6 +227,7 @@ async function testModalCredentials(mode, connId = null, btn = null) {
 
     if (!host) {
         showAlert(alertBox, 'danger', 'Please enter a Host / IP Address first.');
+        alert('Please enter a Host / IP Address first.');
         return;
     }
 
@@ -257,12 +258,16 @@ async function testModalCredentials(mode, connId = null, btn = null) {
         const data = await response.json();
         if (response.ok && data.success) {
             showAlert(alertBox, 'success', `<strong><i class="bi bi-check-circle-fill me-1"></i> Success:</strong> ${data.message}`);
+            alert('✓ Success: ' + data.message);
         } else {
-            showAlert(alertBox, 'danger', `<strong><i class="bi bi-x-circle-fill me-1"></i> Connection Failed:</strong> ${data.message || 'Unknown error'}`);
+            const errMsg = data.message || 'Unknown error';
+            showAlert(alertBox, 'danger', `<strong><i class="bi bi-x-circle-fill me-1"></i> Connection Failed:</strong> ${errMsg}`);
+            alert('✗ Connection Failed: ' + errMsg);
         }
     } catch (err) {
         console.error('Connection test error:', err);
         showAlert(alertBox, 'danger', `<strong><i class="bi bi-x-circle-fill me-1"></i> Connection Failed:</strong> ${err.message}`);
+        alert('✗ Connection Failed: ' + err.message);
     } finally {
         if (btn) {
             btn.disabled = false;
