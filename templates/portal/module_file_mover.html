@@ -188,10 +188,17 @@
 
         try {
             const response = await fetch("{{ url_for('portal.api_module_files', module_id=module.id) }}");
-            const data = await response.json();
+            let data;
+            const contentType = response.headers.get('content-type') || '';
+            if (contentType.includes('application/json')) {
+                data = await response.json();
+            } else {
+                const text = await response.text();
+                throw new Error(`Server returned HTTP ${response.status}: ${text.slice(0, 200)}`);
+            }
 
             if (response.ok && data.success) {
-                filesData = data.files.filter(f => !f.is_dir); // only regular files
+                filesData = (data.files || []).filter(f => !f.is_dir); // only regular files
                 renderTable(filesData);
             } else {
                 throw new Error(data.error || 'Could not list files from Windows share');
@@ -325,7 +332,15 @@
                 })
             });
 
-            const data = await response.json();
+            let data;
+            const contentType = response.headers.get('content-type') || '';
+            if (contentType.includes('application/json')) {
+                data = await response.json();
+            } else {
+                const text = await response.text();
+                throw new Error(`Server returned HTTP ${response.status}: ${text.slice(0, 200)}`);
+            }
+
             confirmMoveModal.hide();
 
             if (response.ok && data.success) {

@@ -249,24 +249,28 @@
                 body: formData
             });
 
-            uploadProgressBar.style.width = '90%';
-            uploadPercentage.textContent = '90%';
-
-            const data = await response.json();
+            let data;
+            const contentType = response.headers.get('content-type') || '';
+            if (contentType.includes('application/json')) {
+                data = await response.json();
+            } else {
+                const text = await response.text();
+                throw new Error(`Server returned HTTP ${response.status}: ${text.slice(0, 200)}`);
+            }
 
             if (response.ok && data.success) {
                 uploadProgressBar.style.width = '100%';
                 uploadPercentage.textContent = '100%';
                 uploadStatusText.textContent = 'Upload complete!';
                 
-                let fileListHtml = data.uploaded_files.map(f => `<li><strong>${f.filename}</strong> (${f.size_formatted})</li>`).join('');
+                let fileListHtml = (data.uploaded_files || []).map(f => `<li><strong>${f.filename}</strong> (${f.size_formatted})</li>`).join('');
                 resultsAlert.className = 'alert alert-success border-success mt-4';
                 resultsAlert.innerHTML = `
                     <div class="d-flex align-items-center mb-2">
                         <i class="bi bi-check-circle-fill fs-4 me-2"></i>
                         <h5 class="alert-heading mb-0">Upload Successful!</h5>
                     </div>
-                    <p class="mb-2">Successfully uploaded ${data.uploaded_files.length} file(s) to <code>${data.destination_path}</code>:</p>
+                    <p class="mb-2">Successfully uploaded ${(data.uploaded_files || []).length} file(s) to <code>${data.destination_path}</code>:</p>
                     <ul class="mb-3">${fileListHtml}</ul>
                     <div class="d-flex gap-2">
                         <button type="button" class="btn btn-sm btn-outline-success" onclick="clearSelectedFiles(); progressSection.style.display='none';">

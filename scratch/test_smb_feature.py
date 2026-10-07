@@ -173,6 +173,27 @@ class TestSMBFeature(unittest.TestCase):
             self.assertEqual(res_mv.status_code, 200)
             self.assertIn(b'Move Selected', res_mv.data)
 
+            # Test execution API error responses (always returns JSON)
+            # 1. Upload without files -> 400 JSON
+            res_up_empty = self.client.post(f'/portal/execute/file_upload/{upload_mod.id}', data={})
+            self.assertEqual(res_up_empty.status_code, 400)
+            data_up_empty = res_up_empty.get_json()
+            self.assertFalse(data_up_empty['success'])
+            self.assertIn('error', data_up_empty)
+
+            # 2. Mover without filenames -> 400 JSON
+            res_mv_empty = self.client.post(f'/portal/execute/file_mover/{mover_mod.id}', json={})
+            self.assertEqual(res_mv_empty.status_code, 400)
+            data_mv_empty = res_mv_empty.get_json()
+            self.assertFalse(data_mv_empty['success'])
+            self.assertIn('error', data_mv_empty)
+
+            # 3. Nonexistent module -> 404 JSON
+            res_404 = self.client.get('/portal/api/modules/99999/files')
+            self.assertEqual(res_404.status_code, 404)
+            data_404 = res_404.get_json()
+            self.assertFalse(data_404['success'])
+
             # Test custom connection test API (invalid host will fail cleanly)
             res_test = self.client.post('/admin/api/connections/test-custom', json={
                 'server_type': 'windows_share',
@@ -202,4 +223,5 @@ class TestSMBFeature(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
 
