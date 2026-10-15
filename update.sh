@@ -25,20 +25,50 @@ pip install -r requirements.txt
 python migrate_db.py
 deactivate
 
-# ---------- Gunicorn timeout fix ----------
-# Default Gunicorn timeout is 30s, which kills long-running Python modules.
-# We patch the service file to set --timeout 0 (unlimited).
+# ---------- Swap Memory Configuration ----------
+# Many cloud servers have 0 swap by default. When memory spikes, Linux OOM-kills Gunicorn.
+if [ $(swapon --show | wc -l) -le 1 ]; then
+    echo "No swap detected. Creating 2G swapfile to prevent OOM kills..."
+    if [ ! -f /swapfile ]; then
+        fallocate -l 2G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=2048
+        chmod 600 /swapfile
+        mkswap /swapfile
+    fi
+    swapon /swapfile 2>/dev/null || true
+    if ! grep -q '/swapfile' /etc/fstab; then
+        echo '/swapfile none swap sw 0 0' >> /etc/fstab
+    fi
+    echo "2G swapfile enabled successfully."
+fi
+
+# ---------- Systemd Service & Gunicorn Tuning ----------
 SERVICE_FILE="/etc/systemd/system/utilportal.service"
 
-if grep -q "\-\-timeout" "$SERVICE_FILE"; then
-    echo "[4/5] Gunicorn timeout already configured — ensuring it is 0..."
-    sed -i 's/--timeout [0-9]*/--timeout 0/g' "$SERVICE_FILE"
-else
-    echo "[4/5] Patching Gunicorn to disable worker timeout (--timeout 0)..."
-    sed -i 's|gunicorn |gunicorn --timeout 0 |g' "$SERVICE_FILE"
+if [ -f "$SERVICE_FILE" ]; then
+    echo "[4/5] Tuning systemd service and Gunicorn..."
+
+    # 1. Ensure unlimited timeout (--timeout 0)
+    if grep -q "\-\-timeout" "$SERVICE_FILE"; then
+        sed -i 's/--timeout [0-9]*/--timeout 0/g' "$SERVICE_FILE"
+    else
+        sed -i 's|gunicorn |gunicorn --timeout 0 |g' "$SERVICE_FILE"
+    fi
+
+    # 2. Add max-requests to periodically recycle worker memory and avoid leaks
+    if ! grep -q "\-\-max-requests" "$SERVICE_FILE"; then
+        sed -i 's|gunicorn |gunicorn --max-requests 500 --max-requests-jitter 50 |g' "$SERVICE_FILE"
+    fi
+
+    # 3. Ensure automatic restart if service crashes or is killed by OOM
+    if ! grep -q "Restart=" "$SERVICE_FILE"; then
+        sed -i '/\[Service\]/a Restart=always\nRestartSec=3' "$SERVICE_FILE"
+    elif grep -q "Restart=no" "$SERVICE_FILE"; then
+        sed -i 's/Restart=no/Restart=always/g' "$SERVICE_FILE"
+    fi
+
+    systemctl daemon-reload
 fi
-systemctl daemon-reload
-# ------------------------------------------
+# -------------------------------------------------------
 
 echo "[5/5] Restarting utilportal service..."
 systemctl restart utilportal
