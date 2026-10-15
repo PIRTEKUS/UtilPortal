@@ -17,6 +17,16 @@
     </div>
 </div>
 
+<!-- Retention Warning -->
+<div class="alert alert-warning d-flex align-items-center py-2 mb-4" role="alert">
+    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+    <div class="small">
+        <strong>Data retention:</strong> Execution results are automatically deleted after
+        <strong>{{ retention_days }} day{{ 's' if retention_days != 1 else '' }}</strong>.
+        Export important results before they expire. Activity history is kept indefinitely.
+    </div>
+</div>
+
 <!-- Summary badges -->
 {% set running = logs | selectattr('status', 'equalto', 'running') | list %}
 {% set success = logs | selectattr('status', 'equalto', 'success') | list %}
@@ -62,20 +72,48 @@
             <table class="table table-hover mb-0 align-middle">
                 <thead class="table-light">
                     <tr>
-                        <th style="width:60px">#</th>
-                        <th>Status</th>
-                        <th>Module</th>
-                        <th>User</th>
-                        <th>Started</th>
-                        <th>Finished</th>
-                        <th>Duration</th>
-                        <th>Message</th>
-                        <th class="text-end">Actions</th>
+                        <th style="width:40px"></th>
+                        <th style="width:75px; cursor: pointer;" onclick="sortTable(1)" class="sort-header" data-column="1"># <i class="bi bi-arrow-down-up small text-muted"></i></th>
+                        <th style="width:115px; cursor: pointer;" onclick="sortTable(2)" class="sort-header" data-column="2">Status <i class="bi bi-arrow-down-up small text-muted"></i></th>
+                        <th style="cursor: pointer;" onclick="sortTable(3)" class="sort-header" data-column="3">Module <i class="bi bi-arrow-down-up small text-muted"></i></th>
+                        <th style="cursor: pointer;" onclick="sortTable(4)" class="sort-header" data-column="4">User <i class="bi bi-arrow-down-up small text-muted"></i></th>
+                        <th style="cursor: pointer;" onclick="sortTable(5)" class="sort-header" data-column="5">Started <i class="bi bi-arrow-down-up small text-muted"></i></th>
+                        <th style="cursor: pointer;" onclick="sortTable(6)" class="sort-header" data-column="6">Finished <i class="bi bi-arrow-down-up small text-muted"></i></th>
+                        <th style="cursor: pointer;" onclick="sortTable(7)" class="sort-header" data-column="7">Duration <i class="bi bi-arrow-down-up small text-muted"></i></th>
+                        <th style="cursor: pointer;" onclick="sortTable(8)" class="sort-header" data-column="8">Message <i class="bi bi-arrow-down-up small text-muted"></i></th>
+                        <th class="text-end" style="width:190px;">Actions / Results</th>
+                    </tr>
+                    <tr id="filter-row" class="bg-light">
+                        <th></th>
+                        <th><input type="text" class="form-control form-control-sm" placeholder="Filter..." id="filter-id" oninput="applyFilters()"></th>
+                        <th>
+                            <select class="form-select form-select-sm" id="filter-status" onchange="applyFilters()">
+                                <option value="">All</option>
+                                <option value="running">Running</option>
+                                <option value="success">Success</option>
+                                <option value="error">Error</option>
+                            </select>
+                        </th>
+                        <th><input type="text" class="form-control form-control-sm" placeholder="Filter..." id="filter-module" oninput="applyFilters()"></th>
+                        <th><input type="text" class="form-control form-control-sm" placeholder="Filter..." id="filter-user" oninput="applyFilters()"></th>
+                        <th></th>
+                        <th></th>
+                        <th></th>
+                        <th><input type="text" class="form-control form-control-sm" placeholder="Filter..." id="filter-message" oninput="applyFilters()"></th>
+                        <th class="text-end">
+                            <button class="btn btn-sm btn-outline-secondary w-100" onclick="resetSortAndFilters()" title="Reset Filters and Sort">
+                                <i class="bi bi-arrow-counterclockwise"></i> Reset
+                            </button>
+                        </th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for log in logs %}
-                    <tr class="{% if log.status == 'running' %}table-warning{% elif log.status == 'error' %}table-danger{% endif %}">
+                    <tr class="execution-row {% if log.status == 'running' %}table-warning{% elif log.status == 'error' %}table-danger{% endif %}"
+                        style="cursor:pointer;" data-target="#detail-{{ log.id }}">
+                        <td class="text-center text-muted">
+                            <i class="bi bi-chevron-down small"></i>
+                        </td>
                         <td class="text-muted small">{{ log.id }}</td>
                         <td>
                             {% if log.status == 'running' %}
@@ -91,20 +129,19 @@
                             {% endif %}
                         </td>
                         <td class="fw-semibold">{{ log.module.name if log.module else '—' }}</td>
-                        <td class="text-muted small">{{ log.user.email if log.user else '—' }}</td>
-                        <td class="small text-nowrap">
-                            {{ log.timestamp.strftime('%Y-%m-%d %H:%M:%S') if log.timestamp else '—' }}
+                        <td class="small text-muted" title="{{ log.user.email if log.user else '—' }}">{{ log.user.email if log.user else '—' }}</td>
+                        <td class="small text-nowrap utc-time" data-utc="{{ log.timestamp.isoformat() if log.timestamp else '' }}" id="started-{{ log.id }}">
+                            —
                         </td>
-                        <td class="small text-nowrap">
-                            {% if log.end_time %}
-                                {{ log.end_time.strftime('%Y-%m-%d %H:%M:%S') }}
-                            {% elif log.status == 'running' %}
+                        <td class="small text-nowrap utc-time" data-utc="{{ log.end_time.isoformat() if log.end_time else '' }}" id="finished-{{ log.id }}">
+                            {% if log.status == 'running' %}
                                 <span class="text-warning fst-italic">In progress…</span>
                             {% else %}
                                 —
                             {% endif %}
                         </td>
-                        <td class="small">
+                        {% set delta = (log.end_time - log.timestamp).total_seconds() | int if (log.end_time and log.timestamp) else 0 %}
+                        <td class="small text-nowrap" id="duration-{{ log.id }}" data-duration="{{ delta }}">
                             {% if log.end_time and log.timestamp %}
                                 {% set delta = (log.end_time - log.timestamp).total_seconds() | int %}
                                 {% if delta >= 3600 %}
@@ -120,28 +157,121 @@
                                 —
                             {% endif %}
                         </td>
-                        <td class="small text-muted">{{ log.message or '—' }}</td>
-                        <td class="text-end">
-                            <div class="d-flex justify-content-end gap-2">
-                                <button class="btn btn-sm btn-outline-info" onclick="showDiagnostics({{ log.id }})">
-                                    <i class="bi bi-bug me-1"></i>Debug
-                                </button>
-                                {% if log.status == 'running' and log.pid %}
-                                <form action="{{ url_for('admin.stop_activity', log_id=log.id) }}" method="post" class="d-inline mb-0"
-                                      onsubmit="return confirm('Are you sure you want to forcefully stop this execution?');">
-                                    <button type="submit" class="btn btn-sm btn-outline-danger">
-                                        <i class="bi bi-stop-circle me-1"></i>Stop
-                                    </button>
-                                </form>
-                                {% else %}
-                                    &nbsp;
+                        <td class="small text-muted" style="max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"
+                            title="{{ log.message.split('\n')[0] if log.message else '' }}">
+                            {{ log.message.split('\n')[0] if log.message else '—' }}
+                        </td>
+                        <td class="text-end" onclick="event.stopPropagation();">
+                            <div class="d-flex justify-content-end align-items-center gap-1">
+                                {% if log.result_data %}
+                                    {% if log.id in large_result_ids %}
+                                    <a href="{{ url_for('portal.download_results', log_id=log.id) }}"
+                                       class="btn btn-sm btn-success" title="Result stored on disk — download CSV/ZIP directly">
+                                        <i class="bi bi-download me-1"></i>Download CSV
+                                    </a>
+                                    {% else %}
+                                    <a href="{{ url_for('portal.view_execution_results', log_id=log.id) }}" class="btn btn-sm btn-outline-success" title="View Result Tables">
+                                        <i class="bi bi-table me-1"></i>View
+                                    </a>
+                                    <a href="{{ url_for('portal.download_results', log_id=log.id) }}"
+                                       class="btn btn-sm btn-outline-secondary" title="Download as CSV/ZIP">
+                                        <i class="bi bi-download"></i>
+                                    </a>
+                                    {% endif %}
+                                {% elif log.status == 'running' %}
+                                    {% if log.pid %}
+                                    <form action="{{ url_for('admin.stop_activity', log_id=log.id) }}" method="post" class="d-inline mb-0"
+                                          onsubmit="return confirm('Are you sure you want to forcefully stop this execution?');">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger" title="Forcefully stop running execution">
+                                            <i class="bi bi-stop-circle me-1"></i>Stop
+                                        </button>
+                                    </form>
+                                    {% else %}
+                                    <span class="badge bg-warning text-dark"><i class="bi bi-arrow-repeat me-1 spin"></i>Running</span>
+                                    {% endif %}
+                                {% elif log.status == 'success' and not log.result_data %}
+                                    <span class="text-muted small fst-italic me-1">No data</span>
                                 {% endif %}
+
+                                <button class="btn btn-sm btn-outline-info" onclick="showDiagnostics({{ log.id }})" title="Open Diagnostic Details">
+                                    <i class="bi bi-bug"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    <!-- Expandable detail row -->
+                    <tr class="collapse" id="detail-{{ log.id }}">
+                        <td colspan="10" class="bg-light p-0">
+                            <div class="p-3">
+                                <div class="row">
+                                    <!-- SQL Call / Message -->
+                                    <div class="col-md-7">
+                                        <div class="d-flex justify-content-between align-items-center mb-1">
+                                            <label class="form-label small fw-bold text-muted mb-0">
+                                                <i class="bi bi-terminal me-1"></i>Execution Details / SQL Call
+                                            </label>
+                                            {% if log.result_data %}
+                                            <div class="d-flex gap-2">
+                                                {% if log.id not in large_result_ids %}
+                                                <a href="{{ url_for('portal.view_execution_results', log_id=log.id) }}" class="btn btn-sm btn-outline-success py-0 px-2" style="font-size:0.75rem;">
+                                                    <i class="bi bi-table me-1"></i>View Results
+                                                </a>
+                                                {% endif %}
+                                                <a href="{{ url_for('portal.download_results', log_id=log.id) }}" class="btn btn-sm btn-outline-secondary py-0 px-2" style="font-size:0.75rem;">
+                                                    <i class="bi bi-download me-1"></i>Download CSV
+                                                </a>
+                                            </div>
+                                            {% endif %}
+                                        </div>
+                                        <div class="position-relative">
+                                            <pre class="bg-dark text-light p-3 rounded small mb-0" style="max-height:190px; overflow-y:auto; white-space:pre-wrap; word-break:break-all;" id="sql-{{ log.id }}">{{ log.message or 'No details available.' }}</pre>
+                                            <div class="position-absolute top-0 end-0 m-2 d-flex gap-2">
+                                                <button class="btn btn-sm btn-outline-info"
+                                                        onclick="event.stopPropagation(); copyDiagnostics({{ log.id }}, '{{ (log.module.name if log.module else '—')|escape }}', '{{ (log.user.email if log.user else '—')|escape }}', '{{ log.status }}')" title="Copy diagnostics for sharing">
+                                                    <i class="bi bi-share me-1"></i>Copy Share Log
+                                                </button>
+                                                <button class="btn btn-sm btn-outline-light"
+                                                        onclick="event.stopPropagation(); copySQL({{ log.id }})" title="Copy message output">
+                                                    <i class="bi bi-clipboard"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <!-- Parameters Used & Metadata -->
+                                    <div class="col-md-5">
+                                        <label class="form-label small fw-bold text-muted mb-1">
+                                            <i class="bi bi-sliders me-1"></i>Parameters Used
+                                        </label>
+                                        {% if log.parameters_used %}
+                                        <pre class="bg-dark text-light p-3 rounded small mb-0" style="max-height:150px; overflow-y:auto; white-space:pre-wrap;" id="params-{{ log.id }}">{{ log.parameters_used }}</pre>
+                                        {% else %}
+                                        <div class="text-muted small fst-italic" id="params-{{ log.id }}">{}</div>
+                                        {% endif %}
+
+                                        <!-- Metadata Badges -->
+                                        <div class="mt-2 small text-muted">
+                                            <span class="badge bg-dark border border-secondary text-info me-1"><i class="bi bi-person me-1"></i>{{ log.user.email if log.user else '—' }}</span>
+                                            {% if log.pid %}
+                                            <span class="badge bg-dark border border-secondary text-light me-1">PID: <span id="pid-{{ log.id }}">{{ log.pid }}</span></span>
+                                            {% endif %}
+                                            {% if log.module and log.module.stored_proc_name %}
+                                            <span class="badge bg-secondary me-1">SP: {{ log.module.stored_proc_name }}</span>
+                                            {% if log.module.database_name %}
+                                            <span class="badge bg-secondary me-1">DB: {{ log.module.database_name }}</span>
+                                            {% endif %}
+                                            {% endif %}
+                                            {% if log.module and log.module.connection %}
+                                            <span class="badge bg-secondary"><i class="bi bi-hdd-network me-1"></i>{{ log.module.connection.name }}</span>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </td>
                     </tr>
                     {% else %}
                     <tr>
-                        <td colspan="9" class="text-center py-5 text-muted">
+                        <td colspan="10" class="text-center py-5 text-muted">
                             <i class="bi bi-inbox display-4 d-block mb-2"></i>
                             No execution history yet.
                         </td>
@@ -243,9 +373,17 @@
                 </div>
             </div>
             <div class="modal-footer border-secondary justify-content-between">
-                <button type="button" class="btn btn-outline-info" onclick="copyModalDiagnostics()" id="btn-copy-diagnostics">
-                    <i class="bi bi-share me-1"></i>Copy Diagnostics for Sharing
-                </button>
+                <div>
+                    <button type="button" class="btn btn-outline-info" onclick="copyModalDiagnostics()" id="btn-copy-diagnostics">
+                        <i class="bi bi-share me-1"></i>Copy Diagnostics for Sharing
+                    </button>
+                    <a href="#" id="m-btn-view" class="btn btn-success ms-2 d-none">
+                        <i class="bi bi-table me-1"></i>View Results
+                    </a>
+                    <a href="#" id="m-btn-download" class="btn btn-outline-secondary text-light ms-1 d-none">
+                        <i class="bi bi-download me-1"></i>Download CSV
+                    </a>
+                </div>
                 <button type="button" class="btn btn-outline-secondary text-light" data-bs-dismiss="modal">Close</button>
             </div>
         </div>
@@ -260,20 +398,259 @@
 
 {% block scripts %}
 <script>
+    // Grid sorting and filtering logic
+    let originalPairs = [];
+    let currentSortColumn = null;
+    let currentSortDir = 1;
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const tbody = document.querySelector('table tbody');
+        if (tbody) {
+            const mainRows = Array.from(tbody.querySelectorAll('.execution-row'));
+            originalPairs = mainRows.map(row => {
+                const detailId = row.getAttribute('data-target');
+                const detailRow = tbody.querySelector(detailId);
+                return { main: row, detail: detailRow };
+            });
+        }
+    });
+
+    function getCellValue(row, colIndex) {
+        const cell = row.cells[colIndex];
+        if (!cell) return '';
+        
+        if (colIndex === 1) { // ID
+            return parseInt(cell.textContent.trim()) || 0;
+        }
+        if (colIndex === 5 || colIndex === 6) { // Started / Finished
+            return cell.getAttribute('data-utc') || '';
+        }
+        if (colIndex === 7) { // Duration
+            return parseInt(cell.getAttribute('data-duration') || '0') || 0;
+        }
+        return cell.textContent.trim();
+    }
+
+    function sortTable(colIndex) {
+        const tbody = document.querySelector('table tbody');
+        if (!tbody) return;
+        
+        const mainRows = Array.from(tbody.querySelectorAll('.execution-row'));
+        if (mainRows.length === 0) return;
+
+        if (currentSortColumn === colIndex) {
+            currentSortDir = -currentSortDir;
+        } else {
+            currentSortColumn = colIndex;
+            currentSortDir = 1;
+        }
+
+        // Update sort icons
+        document.querySelectorAll('.sort-header').forEach(th => {
+            const icon = th.querySelector('i');
+            if (icon) {
+                const col = parseInt(th.getAttribute('data-column'));
+                if (col === colIndex) {
+                    icon.className = currentSortDir === 1 ? 'bi bi-arrow-up text-primary' : 'bi bi-arrow-down text-primary';
+                } else {
+                    icon.className = 'bi bi-arrow-down-up small text-muted';
+                }
+            }
+        });
+
+        const pairs = mainRows.map(row => {
+            const detailId = row.getAttribute('data-target');
+            const detailRow = tbody.querySelector(detailId);
+            return { main: row, detail: detailRow };
+        });
+
+        pairs.sort((a, b) => {
+            const valA = getCellValue(a.main, colIndex);
+            const valB = getCellValue(b.main, colIndex);
+
+            if (valA === valB) return 0;
+            if (typeof valA === 'number' && typeof valB === 'number') {
+                return (valA - valB) * currentSortDir;
+            }
+            const strA = String(valA).toLowerCase();
+            const strB = String(valB).toLowerCase();
+            return strA.localeCompare(strB) * currentSortDir;
+        });
+
+        // Re-append to tbody in sorted order
+        tbody.innerHTML = '';
+        pairs.forEach(pair => {
+            tbody.appendChild(pair.main);
+            if (pair.detail) tbody.appendChild(pair.detail);
+        });
+    }
+
+    function applyFilters() {
+        const tbody = document.querySelector('table tbody');
+        if (!tbody) return;
+        
+        const mainRows = Array.from(tbody.querySelectorAll('.execution-row'));
+        const filterId = document.getElementById('filter-id').value.trim().toLowerCase();
+        const filterStatus = document.getElementById('filter-status').value.trim().toLowerCase();
+        const filterModule = document.getElementById('filter-module').value.trim().toLowerCase();
+        const filterUser = document.getElementById('filter-user').value.trim().toLowerCase();
+        const filterMessage = document.getElementById('filter-message').value.trim().toLowerCase();
+
+        mainRows.forEach(row => {
+            const idText = row.cells[1].textContent.trim().toLowerCase();
+            const statusText = row.cells[2].textContent.trim().toLowerCase();
+            const moduleText = row.cells[3].textContent.trim().toLowerCase();
+            const userText = row.cells[4].textContent.trim().toLowerCase();
+            const messageText = row.cells[8].textContent.trim().toLowerCase();
+
+            const matchesId = !filterId || idText.includes(filterId);
+            const matchesStatus = !filterStatus || statusText.includes(filterStatus);
+            const matchesModule = !filterModule || moduleText.includes(filterModule);
+            const matchesUser = !filterUser || userText.includes(filterUser);
+            const matchesMessage = !filterMessage || messageText.includes(filterMessage);
+
+            const detailId = row.getAttribute('data-target');
+            const detailRow = tbody.querySelector(detailId);
+
+            if (matchesId && matchesStatus && matchesModule && matchesUser && matchesMessage) {
+                row.style.display = '';
+            } else {
+                row.style.display = 'none';
+                if (detailRow) {
+                    detailRow.style.display = 'none';
+                    detailRow.classList.remove('show');
+                    const chevron = row.querySelector('.bi-chevron-down');
+                    if (chevron) chevron.style.transform = '';
+                }
+            }
+        });
+    }
+
+    function resetSortAndFilters() {
+        document.getElementById('filter-id').value = '';
+        document.getElementById('filter-status').value = '';
+        document.getElementById('filter-module').value = '';
+        document.getElementById('filter-user').value = '';
+        document.getElementById('filter-message').value = '';
+
+        currentSortColumn = null;
+        currentSortDir = 1;
+
+        document.querySelectorAll('.sort-header').forEach(th => {
+            const icon = th.querySelector('i');
+            if (icon) icon.className = 'bi bi-arrow-down-up small text-muted';
+        });
+
+        const tbody = document.querySelector('table tbody');
+        if (tbody) {
+            tbody.innerHTML = '';
+            originalPairs.forEach(pair => {
+                pair.main.style.display = '';
+                if (pair.detail) {
+                    pair.detail.style.display = 'none';
+                    pair.detail.classList.remove('show');
+                }
+                const chevron = pair.main.querySelector('.bi-chevron-down');
+                if (chevron) chevron.style.transform = '';
+                
+                tbody.appendChild(pair.main);
+                if (pair.detail) tbody.appendChild(pair.detail);
+            });
+        }
+    }
+
+    // Copy SQL to clipboard
+    function copySQL(logId) {
+        var pre = document.getElementById('sql-' + logId);
+        if (!pre) return;
+        var text = pre.textContent;
+        
+        // Try to extract just the SQL part if the message has our format
+        var sqlMatch = text.match(/SQL:\s*(EXEC\s+.+)/s);
+        if (sqlMatch) {
+            text = sqlMatch[1].trim();
+        } else if (text.startsWith('Executing: ')) {
+            text = text.replace('Executing: ', '').trim();
+        }
+        
+        navigator.clipboard.writeText(text).then(function() {
+            var btn = pre.parentElement.querySelector('button:last-child');
+            var origHTML = btn.innerHTML;
+            btn.innerHTML = '<i class="bi bi-check-lg"></i>';
+            btn.classList.replace('btn-outline-light', 'btn-success');
+            setTimeout(function() {
+                btn.innerHTML = origHTML;
+                btn.classList.replace('btn-success', 'btn-outline-light');
+            }, 1500);
+        });
+    }
+
+    // Copy Diagnostics to clipboard from detail row
+    function copyDiagnostics(logId, moduleName, userEmail, status) {
+        const message = document.getElementById('sql-' + logId)?.textContent || '';
+        const paramsText = document.getElementById('params-' + logId)?.textContent || '{}';
+        const started = document.getElementById('started-' + logId)?.textContent.trim() || '—';
+        const finished = document.getElementById('finished-' + logId)?.textContent.trim() || '—';
+        const duration = document.getElementById('duration-' + logId)?.textContent.trim() || '—';
+        const pid = document.getElementById('pid-' + logId)?.textContent.trim() || '—';
+
+        // Prettify params if valid JSON
+        let prettyParams = paramsText;
+        try {
+            prettyParams = JSON.stringify(JSON.parse(paramsText), null, 2);
+        } catch (e) {}
+
+        const shareText = `### UTILPORTAL DIAGNOSTICS REPORT
+- **Log ID**: #${logId}
+- **Status**: ${status}
+- **Module**: ${moduleName}
+- **User**: ${userEmail}
+- **PID**: ${pid}
+- **Started**: ${started}
+- **Finished**: ${finished}
+- **Duration**: ${duration}
+
+#### Parameters Used:
+\`\`\`json
+${prettyParams}
+\`\`\`
+
+#### Execution Message / Console Output:
+\`\`\`
+${message}
+\`\`\`
+`;
+
+        navigator.clipboard.writeText(shareText).then(function() {
+            const btn = event.currentTarget || document.activeElement;
+            const origHTML = btn.innerHTML;
+            btn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Copied!';
+            btn.classList.replace('btn-outline-info', 'btn-success');
+            setTimeout(function() {
+                btn.innerHTML = origHTML;
+                btn.classList.replace('btn-success', 'btn-outline-info');
+            }, 1500);
+        });
+    }
+
+    // Auto-refresh toggle
     let refreshInterval = null;
     const toggle = document.getElementById('autoRefreshToggle');
     const label  = document.getElementById('refresh-label');
 
-    toggle.addEventListener('change', function () {
-        if (this.checked) {
-            label.textContent = 'Auto-refresh: 10s';
-            refreshInterval = setInterval(() => location.reload(), 10000);
-        } else {
-            label.textContent = 'Auto-refresh: Off';
-            clearInterval(refreshInterval);
-        }
-    });
+    if (toggle) {
+        toggle.addEventListener('change', function () {
+            if (this.checked) {
+                label.textContent = 'Auto-refresh: 10s';
+                refreshInterval = setInterval(() => location.reload(), 10000);
+            } else {
+                label.textContent = 'Auto-refresh: Off';
+                clearInterval(refreshInterval);
+            }
+        });
+    }
 
+    // Diagnostics Modal
     let currentDiagnostics = null;
 
     function showDiagnostics(logId) {
@@ -317,6 +694,27 @@
                 
                 document.getElementById('m-output').textContent = data.message || 'No details available.';
                 
+                // Result view / download buttons in modal footer
+                const btnView = document.getElementById('m-btn-view');
+                const btnDownload = document.getElementById('m-btn-download');
+                if (data.has_results) {
+                    if (btnView) {
+                        if (data.is_large_result) {
+                            btnView.classList.add('d-none');
+                        } else {
+                            btnView.href = `/portal/executions/${data.id}/results`;
+                            btnView.classList.remove('d-none');
+                        }
+                    }
+                    if (btnDownload) {
+                        btnDownload.href = `/portal/executions/${data.id}/download`;
+                        btnDownload.classList.remove('d-none');
+                    }
+                } else {
+                    if (btnView) btnView.classList.add('d-none');
+                    if (btnDownload) btnDownload.classList.add('d-none');
+                }
+
                 const modalEl = document.getElementById('diagnosticsModal');
                 const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
                 modal.show();
@@ -375,5 +773,51 @@ ${d.message || ''}
             }, 1500);
         });
     }
+
+    // Custom execution row click collapse handler to avoid conflict with View button / Stop button clicks
+    document.querySelectorAll('.execution-row').forEach(function(row) {
+        row.addEventListener('click', function(e) {
+            // Ignore if user clicked a link, button, form, or their children
+            if (e.target.closest('a') || e.target.closest('button') || e.target.closest('form') || e.target.closest('.text-end')) {
+                return;
+            }
+            
+            const targetSelector = this.getAttribute('data-target');
+            const targetEl = document.querySelector(targetSelector);
+            if (targetEl) {
+                const chevron = this.querySelector('.bi-chevron-down');
+                if (chevron) {
+                    chevron.style.transition = 'transform 0.2s';
+                    if (targetEl.classList.contains('show')) {
+                        chevron.style.transform = '';
+                    } else {
+                        chevron.style.transform = 'rotate(180deg)';
+                    }
+                }
+                
+                const bsCollapse = bootstrap.Collapse.getOrCreateInstance(targetEl);
+                bsCollapse.toggle();
+            }
+        });
+    });
+
+    // Convert UTC timestamps to the browser's local timezone (EST/EDT)
+    document.querySelectorAll('.utc-time').forEach(function(el) {
+        const utcStr = el.getAttribute('data-utc');
+        if (utcStr) {
+            // Append Z to indicate UTC if it doesn't have it (needed for cross-browser parsing)
+            const dateStr = utcStr.endsWith('Z') ? utcStr : utcStr + 'Z';
+            const localDate = new Date(dateStr);
+            if (!isNaN(localDate)) {
+                const year = localDate.getFullYear();
+                const month = String(localDate.getMonth() + 1).padStart(2, '0');
+                const day = String(localDate.getDate()).padStart(2, '0');
+                const hours = String(localDate.getHours()).padStart(2, '0');
+                const minutes = String(localDate.getMinutes()).padStart(2, '0');
+                const seconds = String(localDate.getSeconds()).padStart(2, '0');
+                el.textContent = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+            }
+        }
+    });
 </script>
 {% endblock %}

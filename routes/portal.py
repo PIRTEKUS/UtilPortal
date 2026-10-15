@@ -956,13 +956,13 @@ def view_execution_results(log_id):
     
     if not log.result_data:
         flash('No results available for this execution. Results may have expired.', 'warning')
-        return redirect(url_for('portal.my_executions'))
+        return redirect(request.referrer or url_for('portal.my_executions'))
     
     try:
         result_sets = _load_result_data(log.result_data)
     except (json.JSONDecodeError, OSError, ValueError):
         flash('Could not parse stored results.', 'danger')
-        return redirect(url_for('portal.my_executions'))
+        return redirect(request.referrer or url_for('portal.my_executions'))
     
     return render_template('portal/module_results.html',
                            module=log.module, result_sets=result_sets, log_id=log.id)
@@ -984,17 +984,17 @@ def download_results(log_id):
 
     if not log.result_data:
         flash('No results available for this execution.', 'warning')
-        return redirect(url_for('portal.my_executions'))
+        return redirect(request.referrer or url_for('portal.my_executions'))
 
     try:
         result_sets = _load_result_data(log.result_data)
     except (json.JSONDecodeError, OSError, ValueError) as e:
         flash(f'Could not read result data: {e}', 'danger')
-        return redirect(url_for('portal.my_executions'))
+        return redirect(request.referrer or url_for('portal.my_executions'))
 
     if not result_sets:
         flash('No data sets found in results.', 'warning')
-        return redirect(url_for('portal.my_executions'))
+        return redirect(request.referrer or url_for('portal.my_executions'))
 
     module_name = (log.module.name if log.module else 'Results').replace(' ', '_')
     date_str = dt.now().strftime('%Y-%m-%d')

@@ -38,7 +38,16 @@ def dashboard():
 @admin_required
 def activity():
     logs = AuditLog.query.order_by(AuditLog.timestamp.desc()).limit(200).all()
-    return render_template('admin/activity.html', logs=logs)
+    setting = AppSetting.query.filter_by(key='results_retention_days').first()
+    retention_days = int(setting.value) if setting and setting.value else 7
+
+    # IDs whose result payload is stored on disk (too large to view in browser)
+    large_result_ids = {log.id for log in logs
+                        if log.result_data and log.result_data.startswith('file:')}
+
+    return render_template('admin/activity.html', logs=logs,
+                           retention_days=retention_days,
+                           large_result_ids=large_result_ids)
 
 @bp.route('/activity/<int:log_id>/stop', methods=['POST'])
 @login_required
@@ -130,7 +139,8 @@ def activity_details(log_id):
         'message': log.message or '',
         'connection_name': conn_name,
         'connection_host': conn_host,
-        'has_results': log.result_data is not None
+        'has_results': log.result_data is not None,
+        'is_large_result': bool(log.result_data and log.result_data.startswith('file:'))
     })
 
 # --- CONNECTIONS ---
