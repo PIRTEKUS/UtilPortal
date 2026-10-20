@@ -51,7 +51,8 @@ with app.app_context():
             print("Detected MySQL database. Ensuring result_data and message columns are LONGTEXT...")
             mysql_cmds = [
                 "ALTER TABLE audit_log MODIFY COLUMN result_data LONGTEXT NULL",
-                "ALTER TABLE audit_log MODIFY COLUMN message LONGTEXT NULL"
+                "ALTER TABLE audit_log MODIFY COLUMN message LONGTEXT NULL",
+                "ALTER TABLE audit_log MODIFY COLUMN module_id INT NULL"
             ]
             for cmd in mysql_cmds:
                 try:

@@ -675,6 +675,50 @@ def edit_module(module_id):
     flash(f'Module "{module.name}" updated successfully.', 'success')
     return redirect(url_for('admin.modules'))
 
+@bp.route('/modules/<int:module_id>/delete', methods=['POST'])
+@login_required
+@admin_required
+def delete_module(module_id):
+    module = Module.query.get_or_404(module_id)
+    module_name = module.name
+    folder_id = module.folder_id
+    
+    # 1. Clean up associated files in instance/modules_data/<id>
+    extract_dirs = [
+        os.path.join(current_app.root_path, 'instance', 'modules_data', str(module.id)),
+        os.path.join('instance', 'modules_data', str(module.id))
+    ]
+    for d in extract_dirs:
+        if os.path.exists(d):
+            try:
+                shutil.rmtree(d, ignore_errors=True)
+            except Exception as e:
+                current_app.logger.warning(f"Could not remove module directory {d}: {e}")
+
+    # 2. Clean up any disk-backed result files from this module's audit logs
+    for log in module.audit_logs:
+        if log.result_data and log.result_data.startswith('file:'):
+            try:
+                os.remove(log.result_data[5:])
+            except OSError:
+                pass
+
+    # 3. Clear user and role associations
+    module.users.clear()
+    module.roles.clear()
+
+    # 4. Normalize sibling display orders in the folder
+    siblings = Module.query.filter(Module.folder_id == folder_id, Module.id != module.id).order_by(Module.display_order, Module.name).all()
+    for i, s in enumerate(siblings):
+        s.display_order = i
+
+    # 5. Delete module from database (cascades to audit_logs)
+    db.session.delete(module)
+    db.session.commit()
+
+    flash(f'Module "{module_name}" has been permanently deleted.', 'success')
+    return redirect(url_for('admin.modules'))
+
 @bp.route('/api/modules/<int:module_id>/files')
 @login_required
 @admin_required

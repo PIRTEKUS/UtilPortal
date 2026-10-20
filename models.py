@@ -139,7 +139,7 @@ class AuditLog(db.Model):
     timestamp = db.Column(db.DateTime, index=True, default=lambda: datetime.now(timezone.utc))
     end_time = db.Column(db.DateTime, nullable=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    module_id = db.Column(db.Integer, db.ForeignKey('module.id'), nullable=False)
+    module_id = db.Column(db.Integer, db.ForeignKey('module.id'), nullable=True)
     parameters_used = db.Column(db.Text)
     status = db.Column(db.String(50))  # 'running', 'success', or 'error'
     message = db.Column(db.Text().with_variant(LONGTEXT, 'mysql'))
@@ -148,7 +148,7 @@ class AuditLog(db.Model):
     result_data = db.Column(db.Text().with_variant(LONGTEXT, 'mysql'), nullable=True)   # JSON of SP result sets
 
     user = db.relationship('User', backref=db.backref('audit_logs', lazy=True))
-    module = db.relationship('Module', backref=db.backref('audit_logs', lazy=True))
+    module = db.relationship('Module', backref=db.backref('audit_logs', lazy=True, cascade='all, delete-orphan'))
 
     def __repr__(self):
         return f'<AuditLog {self.id} User {self.user_id} Module {self.module_id}>'
